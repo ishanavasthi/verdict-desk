@@ -1,0 +1,199 @@
+// Prisma schema for verdict-desk API (milestone M0).
+// M0 creates the tables. DB triggers for the Answer state machine come in a LATER
+// migration — the enums/columns are modelled now so later migrations only ADD triggers.
+// Migrations are created ONLY via `prisma migrate dev` (NEVER `prisma db push`).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  TEACHER
+}
+
+enum Language {
+  JS
+}
+
+enum SubmissionStatus {
+  QUEUED
+  RUNNING
+  PASSED
+  FAILED
+  ERROR
+}
+
+enum TestResultStatus {
+  PASS
+  FAIL
+  TIMEOUT
+  ERROR
+}
+
+enum AuthorType {
+  AI
+  TEACHER
+}
+
+enum AnswerState {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String
+  name         String?
+  role         Role     @default(STUDENT)
+  createdAt    DateTime @default(now())
+
+  submissions    Submission[]
+  doubts         Doubt[]      @relation("DoubtAuthor")
+  reviewedAnswers Answer[]    @relation("AnswerReviewer")
+  reviewAudits   ReviewAudit[] @relation("ReviewActor")
+
+  @@map("users")
+}
+
+model Problem {
+  id          String   @id @default(uuid()) @db.Uuid
+  title       String
+  description String   @db.Text
+  difficulty  String?
+  createdAt   DateTime @default(now())
+
+  testCases   TestCase[]
+  submissions Submission[]
+  doubts      Doubt[]
+
+  @@map("problems")
+}
+
+model TestCase {
+  id             String @id @default(uuid()) @db.Uuid
+  problemId      String @db.Uuid
+  input          String @db.Text
+  expectedOutput String @db.Text
+  hidden         Boolean @default(false)
+  weight         Int     @default(1)
+  ordering       Int     @default(0)
+
+  problem     Problem      @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  testResults TestResult[]
+
+  @@index([problemId])
+  @@map("test_cases")
+}
+
+model Submission {
+  id        String           @id @default(uuid()) @db.Uuid
+  problemId String           @db.Uuid
+  userId    String           @db.Uuid
+  language  Language         @default(JS)
+  code      String           @db.Text
+  status    SubmissionStatus @default(QUEUED)
+  score     Float?
+  createdAt DateTime         @default(now())
+
+  problem     Problem      @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  testResults TestResult[]
+  aiFeedback  AiFeedback?
+
+  @@index([problemId])
+  @@index([userId])
+  @@map("submissions")
+}
+
+model TestResult {
+  id           String           @id @default(uuid()) @db.Uuid
+  submissionId String           @db.Uuid
+  testCaseId   String           @db.Uuid
+  status       TestResultStatus
+  stdout       String           @db.Text
+  stderr       String           @db.Text
+  timeMs       Int
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  testCase   TestCase   @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+  @@index([testCaseId])
+  @@map("test_results")
+}
+
+model AiFeedback {
+  id               String   @id @default(uuid()) @db.Uuid
+  submissionId     String   @unique @db.Uuid
+  content          Json
+  model            String
+  validationStatus String
+  createdAt        DateTime @default(now())
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@map("ai_feedback")
+}
+
+model Doubt {
+  id        String   @id @default(uuid()) @db.Uuid
+  problemId String?  @db.Uuid
+  authorId  String   @db.Uuid
+  title     String
+  body      String   @db.Text
+  createdAt DateTime @default(now())
+
+  problem Problem? @relation(fields: [problemId], references: [id], onDelete: SetNull)
+  author  User     @relation("DoubtAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  answers Answer[]
+
+  @@index([problemId])
+  @@index([authorId])
+  @@map("doubts")
+}
+
+model Answer {
+  id            String      @id @default(uuid()) @db.Uuid
+  doubtId       String      @db.Uuid
+  authorType    AuthorType
+  state         AnswerState @default(DRAFT)
+  content       String      @db.Text
+  editedContent String?     @db.Text
+  reviewedById  String?     @db.Uuid
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  doubt        Doubt         @relation(fields: [doubtId], references: [id], onDelete: Cascade)
+  reviewedBy   User?         @relation("AnswerReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewAudits ReviewAudit[]
+
+  @@index([doubtId])
+  @@index([reviewedById])
+  @@map("answers")
+}
+
+model ReviewAudit {
+  id        String   @id @default(uuid()) @db.Uuid
+  answerId  String   @db.Uuid
+  action    String
+  fromState String?
+  toState   String?
+  actorId   String?  @db.Uuid
+  createdAt DateTime @default(now())
+
+  answer Answer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  actor  User?  @relation("ReviewActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([answerId])
+  @@index([actorId])
+  @@map("review_audits")
+}

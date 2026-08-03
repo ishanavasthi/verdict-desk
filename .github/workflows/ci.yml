@@ -25,6 +25,10 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # Prisma reads DATABASE_URL from .env even for `generate` (it doesn't connect).
+      - name: Create .env
+        run: cp .env.example .env
+
       # @prisma/client is code-generated; do it before lint/typecheck/test.
       - name: Generate Prisma client
         run: pnpm --filter @verdict/api prisma:generate

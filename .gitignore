@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Prisma generated client (lives in node_modules, but be explicit)
+apps/api/generated/
+
+# Env / secrets (keep .env.example tracked)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Sandbox scratch (host temp dirs are outside repo, but ignore any local ones)
+.sandbox-tmp/
+
+# Local planning & agent instructions (kept local, not pushed — per project decision)
+.plans/
+PLAN.md
+PLANS.md
+CLAUDE.md
+DECISIONS.md

@@ -1,0 +1,26 @@
+{
+  "name": "verdict-desk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-powered code grading & doubt-resolution portal (hardened Docker sandbox + teacher-reviewed AI answers)",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,magenta \"pnpm --filter @verdict/api start:dev\" \"pnpm --filter @verdict/web dev\"",
+    "build": "pnpm -r build",
+    "test": "pnpm -r --if-present test",
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d db",
+    "prisma:migrate": "pnpm --filter @verdict/api prisma:migrate",
+    "prisma:deploy": "pnpm --filter @verdict/api prisma:deploy",
+    "seed": "pnpm --filter @verdict/api seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

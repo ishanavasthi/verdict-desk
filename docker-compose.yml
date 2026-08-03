@@ -1,0 +1,22 @@
+# Postgres ONLY. The API stays on the host because it shells out to `docker` to run the
+# per-submission sandbox — do NOT add the API here. See DECISIONS.md ADR-003 / README.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-verdict}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-verdict}
+      POSTGRES_DB: ${POSTGRES_DB:-verdict}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - verdict-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-verdict} -d ${POSTGRES_DB:-verdict}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  verdict-pgdata:

@@ -1,0 +1,15 @@
+{
+  "$comment": "Shared strictness only. Each app sets its own module/target/lib (Nest=CommonJS, Next=bundler).",
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": false,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "sourceMap": true
+  }
+}

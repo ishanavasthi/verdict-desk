@@ -1,0 +1,27 @@
+{
+  "name": "@verdict/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Next.js App Router front-end. Proxies /api/* to the NestJS API.",
+  "scripts": {
+    "dev": "next dev -p ${WEB_PORT:-3000}",
+    "build": "next build",
+    "start": "next start -p ${WEB_PORT:-3000}",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint",
+    "test": "echo \"(web: no unit tests in M0)\" && exit 0"
+  },
+  "dependencies": {
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^15.1.0",
+    "typescript": "^5.7.2"
+  }
+}

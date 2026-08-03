@@ -33,6 +33,9 @@ coverage/
 .vscode/
 *.swp
 
+# Claude Code local state & agent worktrees (kept local, never pushed)
+.claude/
+
 # Sandbox scratch (host temp dirs are outside repo, but ignore any local ones)
 .sandbox-tmp/
 

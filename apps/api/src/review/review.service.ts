@@ -3,6 +3,7 @@ import { AnswerState } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { isTriggerGuardError } from '../doubts/db-conflict';
 import { sanitizeContent } from '../doubts/sanitize';
+import { MAX_REJECT_REASON_CHARS } from './dto/reject-answer.dto';
 
 export interface ReviewQueueItem {
   id: string;
@@ -78,7 +79,9 @@ export class ReviewService {
     // M0 schema (which M4 was told not to alter) — accept + sanitize it for
     // input hygiene and log it server-side rather than silently drop it.
     if (reason !== undefined) {
-      this.logger.log(`answer ${answerId} rejected by ${teacherId}; reason: ${sanitizeContent(reason, 1000)}`);
+      this.logger.log(
+        `answer ${answerId} rejected by ${teacherId}; reason: ${sanitizeContent(reason, MAX_REJECT_REASON_CHARS)}`,
+      );
     }
     await this.casTransition({
       answerId,

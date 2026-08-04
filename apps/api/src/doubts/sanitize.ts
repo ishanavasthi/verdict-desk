@@ -1,5 +1,5 @@
-/** The web renders `editedContent` as plain text — bound its size defensively. */
-export const MAX_EDITED_CONTENT_CHARS = 4000;
+/** The web renders `editedContent` as plain text — bound its size defensively. 8 KB cap. */
+export const MAX_EDITED_CONTENT_CHARS = 8 * 1024;
 
 // Strips C0 controls (keeping ordinary tab, newline, carriage-return
 // whitespace) plus the C1 control block including DEL. Built as a RegExp

@@ -139,3 +139,14 @@ const ANSWER_AUTHOR_TYPE_LABEL: Record<AnswerAuthorType, string> = {
 export function answerAuthorTypeLabel(authorType: AnswerAuthorType): string {
   return ANSWER_AUTHOR_TYPE_LABEL[authorType] ?? authorType;
 }
+
+/**
+ * Deterministic timestamp formatting for SSR + client hydration: an explicit
+ * locale so the server's ICU default and the browser locale can't disagree
+ * (a bare `toLocaleString()` caused a real hydration mismatch in AnswerCard).
+ */
+const TIMESTAMP_FORMAT = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+
+export function formatTimestamp(iso: string | Date): string {
+  return TIMESTAMP_FORMAT.format(new Date(iso));
+}

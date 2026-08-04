@@ -26,6 +26,7 @@ export interface DoubtView {
   id: string;
   problemId: string | null;
   authorId: string;
+  author: { email: string; name: string | null } | null;
   title: string;
   body: string;
   createdAt: Date;
@@ -83,6 +84,7 @@ export class DoubtsController {
     const doubts = await this.prisma.doubt.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
+        author: { select: { email: true, name: true } },
         answers: {
           where: visibleAnswerWhere(user),
           orderBy: { createdAt: 'asc' },
@@ -97,6 +99,7 @@ export class DoubtsController {
     const doubt = await this.prisma.doubt.findUnique({
       where: { id },
       include: {
+        author: { select: { email: true, name: true } },
         answers: {
           where: visibleAnswerWhere(user),
           orderBy: { createdAt: 'asc' },
@@ -122,6 +125,7 @@ export class DoubtsController {
     id: string;
     problemId: string | null;
     authorId: string;
+    author: { email: string; name: string | null } | null;
     title: string;
     body: string;
     createdAt: Date;
@@ -141,6 +145,7 @@ export class DoubtsController {
       id: doubt.id,
       problemId: doubt.problemId,
       authorId: doubt.authorId,
+      author: doubt.author,
       title: doubt.title,
       body: doubt.body,
       createdAt: doubt.createdAt,

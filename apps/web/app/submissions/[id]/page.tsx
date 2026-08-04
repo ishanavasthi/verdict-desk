@@ -48,7 +48,7 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
       eyebrow="Ruling"
       title="Submission"
       actions={
-        <Button variant="outline" size="sm" render={<Link href="/history" />}>
+        <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/history" />}>
           ← History
         </Button>
       }

@@ -1,5 +1,5 @@
 import type { Answer } from '@/lib/api';
-import { answerAuthorTypeLabel, answerStateLabel, answerStateOutcome } from '@/lib/status';
+import { answerAuthorTypeLabel, answerStateLabel, answerStateOutcome, formatTimestamp } from '@/lib/status';
 import StatusBadge from './StatusBadge';
 
 /**
@@ -27,7 +27,7 @@ export default function AnswerCard({
         </span>
         <StatusBadge outcome={answerStateOutcome(answer.state)}>{answerStateLabel(answer.state)}</StatusBadge>
         <span className="ml-auto font-mono text-[0.7rem] text-muted-foreground">
-          {new Date(answer.createdAt).toLocaleString()}
+          {formatTimestamp(answer.createdAt)}
         </span>
       </div>
 

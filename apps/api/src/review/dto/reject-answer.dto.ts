@@ -1,9 +1,8 @@
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 /**
- * Not persisted anywhere (the fixed M0 schema's ReviewAudit has no free-text
- * column) — see ReviewService.reject. 8 KB cap, matching the other review
- * free-text inputs (editedContent).
+ * Persisted to `Answer.reviewNote` — see ReviewService.reject. 8 KB cap,
+ * matching the other review free-text inputs (editedContent).
  */
 export const MAX_REJECT_REASON_CHARS = 8 * 1024;
 

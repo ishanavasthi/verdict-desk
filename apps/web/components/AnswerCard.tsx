@@ -39,6 +39,10 @@ export default function AnswerCard({
       ) : (
         <p className="plain-text mt-2 text-sm">{displayContent}</p>
       )}
+
+      {answer.state === 'REJECTED' && answer.reviewNote != null && (
+        <p className="plain-text mt-2 text-sm italic text-[var(--fail)]">Rejected — {answer.reviewNote}</p>
+      )}
     </li>
   );
 }

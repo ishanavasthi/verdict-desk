@@ -16,6 +16,7 @@ export interface AnswerView {
   state: string;
   content: string;
   editedContent: string | null;
+  reviewNote: string | null;
   reviewedById: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -130,6 +131,7 @@ export class DoubtsController {
       state: string;
       content: string;
       editedContent: string | null;
+      reviewNote: string | null;
       reviewedById: string | null;
       createdAt: Date;
       updatedAt: Date;
@@ -148,6 +150,7 @@ export class DoubtsController {
         state: a.state,
         content: a.editedContent ?? a.content,
         editedContent: null,
+        reviewNote: a.reviewNote,
         reviewedById: a.reviewedById,
         createdAt: a.createdAt,
         updatedAt: a.updatedAt,

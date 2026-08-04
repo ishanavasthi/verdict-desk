@@ -75,13 +75,12 @@ export class ReviewService {
   }
 
   async reject(answerId: string, teacherId: string, reason?: string): Promise<void> {
-    // `reason` has no dedicated column on Answer or ReviewAudit in the fixed
-    // M0 schema (which M4 was told not to alter) — accept + sanitize it for
-    // input hygiene and log it server-side rather than silently drop it.
+    // `reason`, when provided, is sanitized and persisted to `Answer.reviewNote`
+    // in the same CAS update as the state transition — surfaced to the doubt
+    // author and teachers via the doubts detail response.
+    const extraData: Record<string, unknown> = { reviewedById: teacherId };
     if (reason !== undefined) {
-      this.logger.log(
-        `answer ${answerId} rejected by ${teacherId}; reason: ${sanitizeContent(reason, MAX_REJECT_REASON_CHARS)}`,
-      );
+      extraData.reviewNote = sanitizeContent(reason, MAX_REJECT_REASON_CHARS);
     }
     await this.casTransition({
       answerId,
@@ -89,7 +88,7 @@ export class ReviewService {
       toState: AnswerState.REJECTED,
       action: 'reject',
       actorId: teacherId,
-      extraData: { reviewedById: teacherId },
+      extraData,
     });
   }
 

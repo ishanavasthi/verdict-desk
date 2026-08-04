@@ -3,6 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import { ChatOpenAI } from '@langchain/openai';
 
 /**
+ * Prompts that want the MOCK client to return an `{ answer: string }` shape
+ * (the M4 doubt-draft pipeline) instead of the default AI-feedback shape
+ * (`{ summary, severity, suggestions }`, M3) include this marker string in
+ * their instructions. Keeps LlmService a single shared seam for every AI
+ * feature without hard-coding feature-specific branching on prompt content.
+ */
+export const DOUBT_ANSWER_SCHEMA_MARKER = 'verdict-desk-doubt-answer-schema-v1';
+
+/**
  * Provider-agnostic (OpenAI-compatible) chat client.
  *
  * When MOCK_LLM is truthy we bypass the network entirely and return a canned,
@@ -90,12 +99,22 @@ export class LlmService {
 
   /**
    * Canned, deterministic, valid JSON so downstream JSON.parse always
-   * succeeds with NO network call and NO API key. Shaped to match the
-   * AiFeedback strict schema (summary/severity/suggestions — see
-   * ai/feedback-validation.ts) so the feedback pipeline validates and
-   * persists this cleanly end-to-end in MOCK mode.
+   * succeeds with NO network call and NO API key. Branches on
+   * DOUBT_ANSWER_SCHEMA_MARKER so both AI features validate cleanly in MOCK
+   * mode: the M3 AiFeedback strict schema (summary/severity/suggestions —
+   * see ai/feedback-validation.ts) by default, or the M4 doubt-draft strict
+   * schema ({ answer: string } — see doubts/answer-validation.ts) when the
+   * prompt is the doubt-draft prompt.
    */
   private mockResponse(prompt: string): string {
+    if (prompt.includes(DOUBT_ANSWER_SCHEMA_MARKER)) {
+      return JSON.stringify({
+        answer:
+          `Mock AI draft answer (MOCK_LLM enabled, no network call made; prompt was ${prompt.length} chars). ` +
+          'This draft is only ever shown after a teacher reviews and approves it.',
+      });
+    }
+
     return JSON.stringify({
       summary: `Mock LLM response (MOCK_LLM enabled, no network call made; prompt was ${prompt.length} chars).`,
       severity: 'info',

@@ -7,6 +7,8 @@ import { SandboxModule } from './sandbox/sandbox.module';
 import { SubmissionsModule } from './submissions/submissions.module';
 import { AiModule } from './ai/ai.module';
 import { AuthModule } from './auth/auth.module';
+import { DoubtsModule } from './doubts/doubts.module';
+import { ReviewModule } from './review/review.module';
 import { AppLogger } from './common/app-logger.service';
 import { RequestIdMiddleware } from './common/request-id.middleware';
 
@@ -20,6 +22,8 @@ import { RequestIdMiddleware } from './common/request-id.middleware';
     SubmissionsModule,
     AiModule,
     AuthModule,
+    DoubtsModule,
+    ReviewModule,
   ],
   providers: [AppLogger],
   exports: [AppLogger],

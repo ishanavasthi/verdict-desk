@@ -1,11 +1,11 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-# Load .env if present so DATABASE_URL etc. are available to recipes.
-ifneq (,$(wildcard .env))
-include .env
-export
-endif
+# NOTE: do NOT `include .env` here. make parses it with Makefile syntax and does
+# NOT strip quotes, so `DATABASE_URL="postgres://..."` would be exported WITH the
+# literal quotes — and dotenv-cli won't override an already-set var, so Prisma then
+# rejects the value ("must start with postgresql://"). Recipes load .env themselves:
+# every pnpm script uses `dotenv -e ../../.env`, and docker compose reads .env directly.
 
 .PHONY: help setup db-up db-down migrate seed dev down reset prisma-generate test lint
 

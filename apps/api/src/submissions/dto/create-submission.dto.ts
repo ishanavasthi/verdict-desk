@@ -15,15 +15,4 @@ export class CreateSubmissionDto {
   @IsOptional()
   @IsIn(['JS'])
   language?: 'JS';
-
-  /**
-   * M1 STOPGAP ONLY: JWT auth is a later milestone. Until then, callers MAY
-   * pass a `userId` explicitly (handy for tests / scripts/abuse-demo.sh);
-   * otherwise the controller falls back to the seeded `student@verdict.dev`
-   * user. Remove this field once real auth lands and derive the user from
-   * the authenticated session instead.
-   */
-  @IsOptional()
-  @IsUUID()
-  userId?: string;
 }

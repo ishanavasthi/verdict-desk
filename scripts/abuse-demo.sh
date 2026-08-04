@@ -27,6 +27,12 @@ DEFAULT_SUBMIT_TIMEOUT_S="${DEFAULT_SUBMIT_TIMEOUT_S:-90}"
 RESULTS=() # rows for the final PASS/FAIL table
 FAILURES=0
 
+# M2: every request now carries a curl cookie jar so the `verdict_token`
+# httpOnly auth cookie set by POST /auth/login rides along on every
+# subsequent GET/POST (including /submissions, which is now AUTH required).
+COOKIE_JAR="$(mktemp)"
+trap 'rm -f "$COOKIE_JAR"' EXIT
+
 # ---------------------------------------------------------------------------
 # small helpers
 # ---------------------------------------------------------------------------
@@ -46,9 +52,10 @@ record_fail() {
 
 # GET/POST wrappers that never let a transport-level curl failure kill the
 # whole script under `set -e` — a failed request is just treated as an empty
-# response and handled by the caller.
-http_get() { curl -sS --max-time 15 "$1" 2>/dev/null || true; }
-http_post_json() { curl -sS --max-time 15 -X POST -H 'Content-Type: application/json' -d "$2" "$1" 2>/dev/null || true; }
+# response and handled by the caller. Both send + store cookies via
+# $COOKIE_JAR so the auth session established by `login` (below) persists.
+http_get() { curl -sS --max-time 15 -b "$COOKIE_JAR" -c "$COOKIE_JAR" "$1" 2>/dev/null || true; }
+http_post_json() { curl -sS --max-time 15 -b "$COOKIE_JAR" -c "$COOKIE_JAR" -X POST -H 'Content-Type: application/json' -d "$2" "$1" 2>/dev/null || true; }
 
 # True iff the parsed submission JSON contains a test result with the given status.
 has_result_status() {
@@ -134,6 +141,29 @@ if [[ "$health_status" != "ok" || "$health_db" != "up" ]]; then
   exit 1
 fi
 log "health OK (db: ${health_db})"
+
+# ---------------------------------------------------------------------------
+# 0b. Log in as the seeded student. /submissions is now AUTH required (M2),
+#     so every submission below must ride the verdict_token cookie this sets.
+# ---------------------------------------------------------------------------
+
+log ""
+log "-- login as student@verdict.dev --"
+login_json=$(http_post_json "${API_BASE}/auth/login" '{"email":"student@verdict.dev","password":"password"}')
+login_email=$(jq -r '.email // empty' <<<"$login_json" 2>/dev/null || true)
+
+if [[ "$login_email" != "student@verdict.dev" ]]; then
+  log ""
+  log "ERROR: login failed (got: ${login_json:-<no response>})"
+  log "Hint: run \`pnpm --filter @verdict/api seed\` so student@verdict.dev/password exists."
+  exit 1
+fi
+if ! grep -q 'verdict_token' "$COOKIE_JAR" 2>/dev/null; then
+  log "ERROR: login succeeded but no verdict_token cookie was captured in ${COOKIE_JAR}"
+  exit 1
+fi
+log "login OK (${login_email}) — verdict_token cookie captured, will ride every request below"
+log ""
 
 # ---------------------------------------------------------------------------
 # 1. Locate "Sum of Two Numbers"

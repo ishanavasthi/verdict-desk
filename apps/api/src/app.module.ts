@@ -6,6 +6,7 @@ import { ProblemsModule } from './problems/problems.module';
 import { SandboxModule } from './sandbox/sandbox.module';
 import { SubmissionsModule } from './submissions/submissions.module';
 import { AiModule } from './ai/ai.module';
+import { AuthModule } from './auth/auth.module';
 import { AppLogger } from './common/app-logger.service';
 import { RequestIdMiddleware } from './common/request-id.middleware';
 
@@ -18,6 +19,7 @@ import { RequestIdMiddleware } from './common/request-id.middleware';
     SandboxModule,
     SubmissionsModule,
     AiModule,
+    AuthModule,
   ],
   providers: [AppLogger],
   exports: [AppLogger],

@@ -9,7 +9,10 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
+import { RateLimitGuard } from '../common/rate-limit.guard';
+import { DEFAULT_LOGIN_PER_MIN, RATE_LIMIT_LOGIN_ENV, RATE_LIMIT_WINDOW_MS, envLimit } from '../common/rate-limit.config';
 import { AuthService, AuthUserView } from './auth.service';
 import { AUTH_COOKIE_MAX_AGE_MS, AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS } from './cookie';
 import { CurrentUser } from './current-user.decorator';
@@ -21,8 +24,14 @@ import { RequestUser } from './types';
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
+  // Keyed by client IP (no auth cookie exists yet at login time) — bounds
+  // brute-force password guessing against a single account/source.
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitGuard)
+  @Throttle({
+    default: { limit: envLimit(RATE_LIMIT_LOGIN_ENV, DEFAULT_LOGIN_PER_MIN), ttl: RATE_LIMIT_WINDOW_MS },
+  })
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response): Promise<AuthUserView> {
     const user = await this.auth.validateUser(dto.email, dto.password);
     if (!user) {

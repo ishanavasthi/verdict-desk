@@ -11,11 +11,13 @@ import { DoubtsModule } from './doubts/doubts.module';
 import { ReviewModule } from './review/review.module';
 import { AppLogger } from './common/app-logger.service';
 import { RequestIdMiddleware } from './common/request-id.middleware';
+import { RateLimitModule } from './common/rate-limit.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    RateLimitModule,
     HealthModule,
     ProblemsModule,
     SandboxModule,

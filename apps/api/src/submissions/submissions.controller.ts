@@ -11,10 +11,13 @@ import {
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RequestUser } from '../auth/types';
+import { RateLimitGuard } from '../common/rate-limit.guard';
+import { DEFAULT_SUBMISSIONS_PER_MIN, RATE_LIMIT_SUBMISSIONS_ENV, RATE_LIMIT_WINDOW_MS, envLimit } from '../common/rate-limit.config';
 import { SubmissionQueueService } from './submission-queue.service';
 import { CreateSubmissionDto } from './dto/create-submission.dto';
 import { ListSubmissionsQueryDto } from './dto/list-submissions.dto';
@@ -65,6 +68,10 @@ export class SubmissionsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @UseGuards(RateLimitGuard)
+  @Throttle({
+    default: { limit: envLimit(RATE_LIMIT_SUBMISSIONS_ENV, DEFAULT_SUBMISSIONS_PER_MIN), ttl: RATE_LIMIT_WINDOW_MS },
+  })
   async create(
     @Body() dto: CreateSubmissionDto,
     @CurrentUser() user: RequestUser,

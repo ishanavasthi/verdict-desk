@@ -1,8 +1,11 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Logger, NotFoundException, Param, Post, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequestUser } from '../auth/types';
+import { RateLimitGuard } from '../common/rate-limit.guard';
+import { DEFAULT_DOUBTS_PER_MIN, RATE_LIMIT_DOUBTS_ENV, RATE_LIMIT_WINDOW_MS, envLimit } from '../common/rate-limit.config';
 import { CreateDoubtDto } from './dto/create-doubt.dto';
 import { AiDraftPipeline } from './ai-draft.pipeline';
 import { visibleAnswerWhere } from './answer-visibility';
@@ -49,6 +52,10 @@ export class DoubtsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @UseGuards(RateLimitGuard)
+  @Throttle({
+    default: { limit: envLimit(RATE_LIMIT_DOUBTS_ENV, DEFAULT_DOUBTS_PER_MIN), ttl: RATE_LIMIT_WINDOW_MS },
+  })
   async create(@Body() dto: CreateDoubtDto, @CurrentUser() user: RequestUser): Promise<CreateDoubtResponse> {
     const doubt = await this.prisma.doubt.create({
       data: {

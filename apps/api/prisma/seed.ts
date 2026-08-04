@@ -10,7 +10,7 @@
  * ESC U+001B) alongside multi-byte unicode. The whole payload is built from
  * \u escape sequences below so no literal non-ASCII bytes live in this source.
  */
-import { PrismaClient, Role, QuestionKind } from '@prisma/client';
+import { PrismaClient, Prisma, Role, QuestionKind } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -183,7 +183,9 @@ async function upsertDataProblem(p: DataProblem): Promise<void> {
     description: p.description,
     difficulty: p.difficulty,
     kind: p.kind as QuestionKind,
-    options: p.options ?? undefined,
+    // `options` is a Json? column: Prisma's input type is InputJsonValue, which
+    // doesn't accept a typed object array directly (no string index signature).
+    options: (p.options ?? undefined) as Prisma.InputJsonValue | undefined,
     answerKey: p.answerKey,
   };
 

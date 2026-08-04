@@ -36,5 +36,10 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # Catches type errors in files that only ever run through tsx (e.g.
+      # prisma/seed.ts), which `pnpm test` alone would never surface.
+      - name: Typecheck
+        run: pnpm -r typecheck
+
       - name: Test
         run: pnpm test

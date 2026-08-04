@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getAuthToken } from '@/lib/auth';
 import { getSubmissionHistory, type QuestionKind, type SubmissionSummary } from '@/lib/api';
-import { statusOutcome, submissionStatusLabel } from '@/lib/status';
+import { formatTimestamp, statusOutcome, submissionStatusLabel } from '@/lib/status';
 import StatusBadge from '@/components/StatusBadge';
 import { Badge } from '@/components/ui/badge';
 import PageShell from '@/components/PageShell';
@@ -53,7 +53,7 @@ export default async function HistoryPage() {
                   {submission.score !== null ? `${submission.score}%` : '—'}
                 </span>
                 <span className="ml-auto font-mono text-xs text-muted-foreground">
-                  {new Date(submission.createdAt).toLocaleString()}
+                  {formatTimestamp(submission.createdAt)}
                 </span>
               </Link>
             </li>

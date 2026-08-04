@@ -179,7 +179,7 @@ describe('ReviewService — guarded CAS + 409 mapping', () => {
     expect(prisma.answer.findMany).toHaveBeenCalledWith({
       where: { state: 'PENDING_REVIEW' },
       orderBy: { createdAt: 'desc' },
-      include: { doubt: { select: { id: true, title: true, body: true, authorId: true } } },
+      include: { doubt: { select: { id: true, title: true, body: true, authorId: true, author: { select: { email: true } } } } },
     });
   });
 });

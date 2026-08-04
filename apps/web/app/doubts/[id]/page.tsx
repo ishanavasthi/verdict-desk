@@ -43,7 +43,7 @@ export default async function DoubtDetailPage({ params }: { params: Promise<{ id
       eyebrow="Chambers"
       title="Doubt"
       actions={
-        <Button variant="outline" size="sm" render={<Link href="/doubts" />}>
+        <Button variant="outline" size="sm" nativeButton={false} render={<Link href="/doubts" />}>
           ← Doubts
         </Button>
       }

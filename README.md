@@ -11,7 +11,8 @@ integration**. The [Security & threat model](#security--threat-model) section is
 ---
 
 ## Contents
-- [Quick start](#quick-start) · [What you can try](#what-you-can-try) · [Architecture](#architecture)
+- [Quick start](#quick-start) · [What you can try](#what-you-can-try) · [Question kinds](#question-kinds) ·
+  [Architecture](#architecture)
 - [Security & threat model](#security--threat-model): [sandbox](#1-the-grading-sandbox) · [injection](#2-prompt-injection--llm-safety) · [state machine](#3-the-answer-state-machine-enforced-in-the-database) · [residual risks](#4-residual-risks-honest-disclosure)
 - [Why PostgreSQL, not MongoDB](#why-postgresql-not-mongodb-the-mern-question) · [Data model](#data-model) · [Testing](#testing) · [Env & structure](#configuration)
 
@@ -41,8 +42,23 @@ Open **http://localhost:3000** (the API is at :4000, proxied same-origin via `/a
 | **Grade a submission** | Log in as the student → open *Sum of Two Numbers* → paste a solution → **Submit**. You get per-test pass/fail + a weighted score. Hidden test cases show **pass/fail only** (no I/O). |
 | **See the sandbox contain hostile code** | `bash scripts/abuse-demo.sh` (with the stack up). Proves: correct→100%, `while(1)`→TIMEOUT, fork bomb→killed, network→blocked, fs-write→blocked, 100MB stdout→truncated with **stable API memory**, and a queue-stall attempt→contained. Exits non-zero if any check fails. |
 | **AI feedback** | After grading, an **"🤖 AI-generated · UNREVIEWED"** card appears with a severity + suggestions. |
-| **Doubts → teacher review** | As the student, post a doubt on **Doubts**. An AI drafts an answer that stays hidden. As the **teacher**, open **Review queue**, see the doubt + draft side-by-side, and Approve/Edit/Reject. Only approved answers become visible to other students. |
+| **Doubts → teacher review** | As the student, post a doubt on **Doubts**. An AI drafts an answer that stays hidden. As the **teacher**, open **Review queue**, see the doubt + draft side-by-side, and Approve/Edit/Reject (optionally with a **reject reason**, persisted and shown to the doubt's author on the rejected answer). Only approved answers become visible to other students, and the doubt page **live-polls** while an answer is still DRAFT/PENDING_REVIEW so an approval/rejection shows up without a manual refresh. |
+| **Answer an MCQ or INTEGER question** | Open a non-CODE problem — it's graded **instantly, server-side**, no sandbox or LLM involved (see [Question kinds](#question-kinds)). |
+| **Recover a failed AI feedback generation** | If a feedback generation is flagged **FAILED**, the results card shows a **Regenerate** button — it re-fires generation without needing a new submission. |
 | **Prove the DB rejects illegal transitions** | `docker compose exec -T db psql -U verdict -d verdict -c "UPDATE answers SET state='APPROVED' WHERE state='REJECTED';"` → **the database itself errors.** |
+
+### Question kinds
+
+Problems carry a `kind`: `CODE`, `MCQ`, or `INTEGER`.
+
+- **CODE** is graded the "hard way" — queued, run against test cases in the hardened Docker sandbox described below,
+  and (fire-and-forget, after grading) gets an AI code-quality feedback pass.
+- **MCQ / INTEGER are graded instantly, in-process, server-side** — no sandbox, no queue, no LLM call. The submitted
+  answer is validated and normalized (`objective-grading.ts`), then compared against the problem's `answerKey`
+  (exact option-id match for MCQ, canonicalized numeric comparison for INTEGER, so `"007"` and `"-0"` grade sanely).
+  The submission is **born terminal** — `feedbackStatus: SKIPPED` — since there is nothing for an LLM to critique
+  about a multiple-choice pick. A malformed/out-of-range answer is rejected with a generic `400` that never echoes
+  the valid option ids or the correct value.
 
 ## Architecture
 
@@ -118,6 +134,13 @@ None can crash the environment or forge a PASS: submitted code runs **only** ins
 in the API process or the browser — the UI just polls for the verdict), expected outputs are withheld from it, and
 pass/fail is computed host-side. `bash scripts/verify-destructive.sh` reproduces this matrix (exits non-zero if any
 payload escapes); the two DoS rows are also in `scripts/abuse-demo.sh`.
+
+**The same secrecy guarantee extends to MCQ/INTEGER's `answerKey`.** It never enters a container (there isn't one
+for these kinds — grading is a pure in-process comparison), and it is held to the same standard as a hidden
+test-case's expected output: selected only inside the server-side grading path, never included in any Prisma
+`select` for a student-facing response (problem list, problem detail, or submission view), and the boundary is
+pinned by a dedicated regression spec (`apps/api/test/answer-key-redaction.spec.ts`) rather than left to
+convention.
 
 ### 2. Prompt-injection & LLM safety
 
@@ -197,10 +220,13 @@ JSON) · `Doubt` → `Answer` (`authorType AI|TEACHER`, `state DRAFT|PENDING_REV
 ## Testing
 
 ```bash
-pnpm test                      # ~180 unit tests: state machine, redaction, Zod gates, caps, verdict/scoring — DB/Docker/network-free (this is what CI runs)
+pnpm test                      # 221 unit tests / 29 suites: state machine, redaction (incl. answerKey), Zod gates,
+                                # caps, objective grading, verdict/scoring — DB/Docker/network-free (what CI runs)
 bash scripts/abuse-demo.sh          # sandbox evidence artifact (needs the stack up): 7 containment assertions
 bash scripts/verify-destructive.sh  # destructive-payload matrix: fs destruction, key exfil, de-root, disk/mem bombs
-# e2e happy-path (needs DB, MOCK mode):
+# e2e (needs DB, MOCK mode) — currently the happy path (grade -> hidden-case redaction -> doubt -> AI draft ->
+# teacher approval -> visible); a broadened suite covering reject-with-reason, rate-limit 429, input caps,
+# MCQ/INTEGER grading, and feedback regenerate is being added under the same command:
 docker compose up -d --wait db && pnpm --filter @verdict/api prisma:deploy && pnpm --filter @verdict/api seed
 MOCK_LLM=1 pnpm --filter @verdict/api test:e2e
 ```
@@ -220,11 +246,14 @@ All config is env-driven; see **`.env.example`** for the full list with safe loc
 
 ## Sample problem data
 
-Beyond the handful of problems inlined in `prisma/seed.ts`, `apps/api/prisma/data/code-problems.json` ships 11
-additional easy stdin/stdout problems curated from [DeepMind CodeContests](https://huggingface.co/datasets/deepmind/code_contests)
-(HuggingFace, Apache-2.0). They were fetched once at authoring time via the `datasets-server` REST API, cleaned to
-plain-text statements, and retitled — the checked-in JSON is the only artifact the seed script reads, so `pnpm seed`
-stays fully offline with no network access or dataset dependency at runtime.
+The seed is a **28-problem docket**: 4 CODE problems inlined in `prisma/seed.ts` plus 24 from JSON-driven,
+idempotent seed files under `apps/api/prisma/data/` — `code-problems.json` (11 additional easy stdin/stdout
+problems curated from [DeepMind CodeContests](https://huggingface.co/datasets/deepmind/code_contests) (HuggingFace,
+Apache-2.0), each verified by running a correct JS solution against every one of its test cases) and
+`objective-problems.json` (8 hand-curated MCQ + 5 hand-curated INTEGER questions). Both files were fetched/authored
+once at authoring time — the checked-in JSON is the only artifact the seed script reads, so `pnpm seed` stays fully
+offline with no network access or dataset dependency at runtime, and re-seeding is idempotent (it upserts problems
+and does not delete existing `TestCase` rows).
 
 ## What v1 intentionally does not do
 

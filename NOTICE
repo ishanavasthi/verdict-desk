@@ -1,0 +1,40 @@
+verdict-desk
+Copyright (c) 2026 Ishan Avasthi
+
+This product includes third-party material, redistributed under its own terms.
+
+------------------------------------------------------------------------------
+DeepMind CodeContests  —  Apache License, Version 2.0
+------------------------------------------------------------------------------
+
+`apps/api/prisma/data/code-problems.json` contains 11 programming problems
+(statements and input/output test cases) derived from the DeepMind CodeContests
+dataset:
+
+    https://huggingface.co/datasets/deepmind/code_contests
+    Copyright DeepMind Technologies Limited
+    Licensed under the Apache License, Version 2.0
+
+You may obtain a copy of the Apache License, Version 2.0 at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+
+CHANGES MADE (per Apache-2.0 §4(b)): the selected problems were reformatted
+into this project's own JSON schema; problem statements were cleaned to plain
+text (dataset markup, images, and LaTeX artifacts removed) and retitled without
+their contest-number prefixes; test cases were selected and capped (public
+tests mapped to visible cases, private/generated tests to hidden cases), with
+expected outputs normalized for this project's exact-match grading rule. No
+dataset solutions are included.
+
+------------------------------------------------------------------------------
+
+All other problem content — `apps/api/prisma/data/objective-problems.json`
+(8 multiple-choice and 5 integer-answer questions) and the inline problems in
+`apps/api/prisma/seed.ts` — is original to this project and covered by the MIT
+License in LICENSE.

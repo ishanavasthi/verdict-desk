@@ -246,21 +246,27 @@ JSON) · `Doubt` → `Answer` (`authorType AI|TEACHER`, `state DRAFT|PENDING_REV
 ## Testing
 
 ```bash
-pnpm test                      # 221 unit tests / 29 suites: state machine, redaction (incl. answerKey), Zod gates,
+pnpm test                      # 222 unit tests / 29 suites: state machine, redaction (incl. answerKey), Zod gates,
                                 # caps, objective grading, verdict/scoring — DB/Docker/network-free (what CI runs)
 bash scripts/abuse-demo.sh          # sandbox evidence artifact (needs the stack up): 7 containment assertions
 bash scripts/verify-destructive.sh  # destructive-payload matrix: fs destruction, key exfil, de-root, disk/mem bombs
 bash scripts/verify-uid-separation.sh  # proves the /proc/1/fd/1 residual is closed (talks to Docker directly)
-# e2e (needs DB, MOCK mode) — currently the happy path (grade -> hidden-case redaction -> doubt -> AI draft ->
-# teacher approval -> visible); a broadened suite covering reject-with-reason, rate-limit 429, input caps,
-# MCQ/INTEGER grading, and feedback regenerate is being added under the same command:
+# e2e (needs DB, MOCK mode) — 9 specs: the happy path (grade -> hidden-case redaction -> doubt -> AI draft ->
+# teacher approval -> visible) plus teacher approve/reject-with-reason visibility, rate-limit 429, input caps,
+# MCQ/INTEGER grading with answerKey-absence assertions, and feedback regenerate:
 docker compose up -d --wait db && pnpm --filter @verdict/api prisma:deploy && pnpm --filter @verdict/api seed
 MOCK_LLM=1 pnpm --filter @verdict/api test:e2e
 ```
 
 The state machine was additionally verified with a raw-SQL attack matrix (illegal `UPDATE`/`INSERT` rejected by the
-DB) and the full student + teacher flows were exercised end-to-end in a real browser. CI (GitHub Actions) runs lint +
-the DB-free unit suite on every push.
+DB) and the full student + teacher flows were exercised end-to-end in a real browser. CI (GitHub Actions) runs lint,
+typecheck, and the DB-free unit suite on every push, plus a headless-browser smoke job (login → docket → MCQ submit
+→ verdict) against a fully booted stack.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Third-party problem data (DeepMind CodeContests, Apache-2.0) is attributed in
+[NOTICE](NOTICE), which also records the modifications made to it.
 
 ## Configuration
 

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getMe } from '../lib/auth';
 import { getProblems, type Problem } from '../lib/api';
 import LogoutButton from '../components/LogoutButton';
+import NavLinks from '../components/NavLinks';
 
 // Auth-gated: reads the request cookie via `getMe()`, so this can never be
 // statically rendered at build time (and the API may not even be running
@@ -36,9 +37,7 @@ export default async function HomePage() {
           </p>
         </div>
         <div className="header-actions">
-          <Link href="/history" className="btn btn-secondary">
-            History
-          </Link>
+          <NavLinks role={user.role} />
           <LogoutButton />
         </div>
       </header>

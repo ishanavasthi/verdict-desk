@@ -1,9 +1,11 @@
 import {
+  ConflictException,
   Controller,
   Body,
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   NotFoundException,
   Param,
   Post,
@@ -18,6 +20,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RequestUser } from '../auth/types';
 import { RateLimitGuard } from '../common/rate-limit.guard';
 import { DEFAULT_SUBMISSIONS_PER_MIN, RATE_LIMIT_SUBMISSIONS_ENV, RATE_LIMIT_WINDOW_MS, envLimit } from '../common/rate-limit.config';
+import { AiFeedbackService } from '../ai/feedback.service';
 import { SubmissionQueueService } from './submission-queue.service';
 import { CreateSubmissionDto } from './dto/create-submission.dto';
 import { ListSubmissionsQueryDto } from './dto/list-submissions.dto';
@@ -95,9 +98,12 @@ export interface SubmissionHistoryItem {
 @Controller('submissions')
 @UseGuards(JwtAuthGuard)
 export class SubmissionsController {
+  private readonly logger = new Logger(SubmissionsController.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly queue: SubmissionQueueService,
+    private readonly aiFeedback: AiFeedbackService,
   ) {}
 
   @Post()
@@ -192,5 +198,44 @@ export class SubmissionsController {
           }
         : null,
     };
+  }
+
+  @Post(':id/feedback/regenerate')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @UseGuards(RateLimitGuard)
+  @Throttle({
+    default: { limit: envLimit(RATE_LIMIT_SUBMISSIONS_ENV, DEFAULT_SUBMISSIONS_PER_MIN), ttl: RATE_LIMIT_WINDOW_MS },
+  })
+  async regenerateFeedback(
+    @Param('id') id: string,
+    @CurrentUser() user: RequestUser,
+  ): Promise<{ id: string; feedbackStatus: 'PENDING' }> {
+    // Same ownership rule as get(): existence is never leaked to a non-owner.
+    const submission = await this.prisma.submission.findFirst({
+      where: {
+        id,
+        ...(user.role === 'TEACHER' ? {} : { userId: user.id }),
+      },
+      include: { aiFeedback: true },
+    });
+    if (!submission) {
+      throw new NotFoundException(`submission ${id} not found`);
+    }
+
+    if (computeFeedbackStatus(submission.status, submission.aiFeedback) !== 'FAILED') {
+      throw new ConflictException('feedback can only be regenerated when generation has failed');
+    }
+
+    await this.prisma.aiFeedback.delete({ where: { submissionId: id } });
+
+    // Fire-and-forget, same pattern as grading.service.ts's triggerFeedback:
+    // never let feedback generation block or fail this request.
+    this.aiFeedback.generateForSubmission(id).catch((err) => {
+      this.logger.error(
+        `AI feedback regeneration failed for submission ${id}: ${(err as Error).message}`,
+      );
+    });
+
+    return { id: submission.id, feedbackStatus: 'PENDING' };
   }
 }

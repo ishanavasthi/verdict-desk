@@ -1,5 +1,5 @@
 import type { SubmissionDetail } from '../lib/api';
-import { statusBadgeClass, submissionStatusLabel } from '../lib/status';
+import { feedbackSeverityLabel, statusBadgeClass, submissionStatusLabel } from '../lib/status';
 
 /**
  * Renders the outcome of a single submission: overall status/score plus a
@@ -9,6 +9,7 @@ import { statusBadgeClass, submissionStatusLabel } from '../lib/status';
  * Server or a Client Component tree.
  */
 export default function SubmissionResults({ submission }: { submission: SubmissionDetail }) {
+  const { feedback } = submission;
   return (
     <div className="results">
       <div className="results-summary">
@@ -56,6 +57,36 @@ export default function SubmissionResults({ submission }: { submission: Submissi
           ))}
         </ul>
       )}
+
+      <div className="feedback-card">
+        <div className="feedback-header">
+          <span className="feedback-label">&#129302; AI-generated feedback &middot; UNREVIEWED</span>
+        </div>
+        <p className="feedback-subline">Automated code-quality notes — not verified by a human.</p>
+
+        {feedback === null ? (
+          <p className="feedback-placeholder">Generating AI feedback&hellip;</p>
+        ) : feedback.status === 'VALID' && feedback.content ? (
+          <div className="feedback-body">
+            <span className={`badge badge-sm badge-severity-${feedback.content.severity}`}>
+              {feedbackSeverityLabel(feedback.content.severity)}
+            </span>
+            <p className="feedback-summary">{feedback.content.summary}</p>
+            {feedback.content.suggestions.length > 0 && (
+              <ul className="feedback-suggestions">
+                {feedback.content.suggestions.map((suggestion, index) => (
+                  <li key={index} className="feedback-suggestion">
+                    <strong>{suggestion.title}</strong>
+                    <p>{suggestion.detail}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : (
+          <p className="feedback-note">AI feedback couldn&rsquo;t be generated for this submission.</p>
+        )}
+      </div>
     </div>
   );
 }

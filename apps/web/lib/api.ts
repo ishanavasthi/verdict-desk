@@ -70,12 +70,45 @@ export interface TestResultView {
   timeMs?: number;
 }
 
+export type FeedbackStatus = 'VALID' | 'FLAGGED';
+export type FeedbackSeverity = 'info' | 'low' | 'medium' | 'high';
+
+export interface FeedbackSuggestion {
+  title: string;
+  detail: string;
+}
+
+export interface FeedbackContent {
+  summary: string;
+  severity: FeedbackSeverity;
+  suggestions: FeedbackSuggestion[];
+}
+
+/**
+ * AI-generated code-quality feedback for a submission. This is produced by
+ * an LLM with NO human review — always render `unreviewed` prominently in
+ * the UI and treat `content` fields as untrusted plain text (never as
+ * HTML/markdown to render).
+ *
+ * `null` until generation completes (shortly after grading finishes).
+ * `status: 'FLAGGED'` or `content: null` means the model output couldn't be
+ * validated into the expected shape — show a graceful fallback, never raw
+ * text from the model.
+ */
+export interface SubmissionFeedback {
+  status: FeedbackStatus;
+  model: string;
+  unreviewed: true;
+  content: FeedbackContent | null;
+}
+
 export interface SubmissionDetail {
   id: string;
   problemId: string;
   status: SubmissionStatus;
   score: number | null;
   results: TestResultView[];
+  feedback: SubmissionFeedback | null;
 }
 
 export interface SubmissionSummary {

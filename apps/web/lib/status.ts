@@ -1,4 +1,4 @@
-import type { SubmissionStatus, TestResultStatus } from './api';
+import type { FeedbackSeverity, SubmissionStatus, TestResultStatus } from './api';
 
 const SUBMISSION_STATUS_LABEL: Record<SubmissionStatus, string> = {
   QUEUED: 'Queued',
@@ -31,4 +31,15 @@ export function statusBadgeClass(status: SubmissionStatus | TestResultStatus | s
     default:
       return 'badge-pending';
   }
+}
+
+const FEEDBACK_SEVERITY_LABEL: Record<FeedbackSeverity, string> = {
+  info: 'Info',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+};
+
+export function feedbackSeverityLabel(severity: FeedbackSeverity): string {
+  return FEEDBACK_SEVERITY_LABEL[severity] ?? severity;
 }

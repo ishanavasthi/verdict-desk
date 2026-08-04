@@ -17,6 +17,17 @@
   --color-primary: #2757e6;
   --color-primary-hover: #1f45bd;
   --radius: 10px;
+  --color-severity-info-bg: #e8f0fe;
+  --color-severity-info-text: #1a56c4;
+  --color-severity-low-bg: #e6f6ea;
+  --color-severity-low-text: #1a7f37;
+  --color-severity-medium-bg: #fff4e5;
+  --color-severity-medium-text: #9a5b00;
+  --color-severity-high-bg: #fdecec;
+  --color-severity-high-text: #b3261e;
+  --color-feedback-bg: #fbf9f2;
+  --color-feedback-border: #ecd9a8;
+  --color-feedback-label: #7a5b00;
 }
 
 * {
@@ -505,6 +516,116 @@ body {
 
 .output-stderr {
   color: var(--color-error-text);
+}
+
+/* ---- AI feedback ---- */
+
+.feedback-card {
+  border: 1px solid var(--color-feedback-border);
+  background: var(--color-feedback-bg);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+}
+
+.feedback-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.feedback-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-feedback-label);
+  text-transform: uppercase;
+}
+
+.feedback-subline {
+  margin: 0.3rem 0 0.75rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.feedback-placeholder {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.feedback-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.feedback-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.feedback-summary {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--color-text);
+  white-space: pre-wrap;
+}
+
+.feedback-suggestions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.feedback-suggestion {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+}
+
+.feedback-suggestion strong {
+  display: block;
+  font-size: 0.85rem;
+  margin-bottom: 0.2rem;
+}
+
+.feedback-suggestion p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+}
+
+.badge-severity-info {
+  background: var(--color-severity-info-bg);
+  color: var(--color-severity-info-text);
+}
+
+.badge-severity-low {
+  background: var(--color-severity-low-bg);
+  color: var(--color-severity-low-text);
+}
+
+.badge-severity-medium {
+  background: var(--color-severity-medium-bg);
+  color: var(--color-severity-medium-text);
+}
+
+.badge-severity-high {
+  background: var(--color-severity-high-bg);
+  color: var(--color-severity-high-text);
 }
 
 /* ---- History ---- */

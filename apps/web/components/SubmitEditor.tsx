@@ -7,8 +7,9 @@ import { isTerminalStatus, type CreateSubmissionResponse, type SubmissionDetail 
 
 const POLL_INTERVAL_MS = 1000;
 const MAX_POLL_ATTEMPTS = 30; // ~30s cap before we tell the user to check back later.
+const MAX_FEEDBACK_POLL_ATTEMPTS = 10; // ~10s cap for AI feedback after grading finishes.
 
-type Phase = 'idle' | 'submitting' | 'polling' | 'busy' | 'timeout' | 'error';
+type Phase = 'idle' | 'submitting' | 'polling' | 'polling-feedback' | 'busy' | 'timeout' | 'error';
 
 function starterCode(problemTitle: string): string {
   return `// ${problemTitle}\n// Write your solution below, then hit Submit.\n`;
@@ -23,6 +24,8 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attemptsRef = useRef(0);
+  const feedbackAttemptsRef = useRef(0);
+  const awaitingFeedbackRef = useRef(false);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -43,7 +46,15 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
   }
 
   async function pollSubmission(id: string) {
-    attemptsRef.current += 1;
+    // Once grading reaches a terminal status we switch to a separate,
+    // shorter-capped polling mode just to pick up `feedback` (generated a
+    // moment after grading finishes) without a manual refresh.
+    const isFeedbackPoll = awaitingFeedbackRef.current;
+    if (isFeedbackPoll) {
+      feedbackAttemptsRef.current += 1;
+    } else {
+      attemptsRef.current += 1;
+    }
 
     try {
       const res = await fetch(`/api/submissions/${id}`, { cache: 'no-store' });
@@ -63,18 +74,34 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
       setSubmission(data);
 
       if (isTerminalStatus(data.status)) {
-        setPhase('idle');
-        stopPolling();
+        if (data.feedback !== null || feedbackAttemptsRef.current >= MAX_FEEDBACK_POLL_ATTEMPTS) {
+          setPhase('idle');
+          stopPolling();
+          return;
+        }
+
+        // Grading is done but feedback hasn't landed yet — keep polling a
+        // few more times, capped, then give up and leave the "generating…"
+        // placeholder showing (feedback may still arrive on a later visit).
+        awaitingFeedbackRef.current = true;
+        setPhase('polling-feedback');
+        pollTimer.current = setTimeout(() => pollSubmission(id), POLL_INTERVAL_MS);
         return;
       }
     } catch {
       // Transient errors while polling are swallowed — we just keep trying
-      // until MAX_POLL_ATTEMPTS, at which point we surface a timeout message.
+      // until the relevant cap is hit.
     }
 
     if (!mountedRef.current) return;
 
-    if (attemptsRef.current >= MAX_POLL_ATTEMPTS) {
+    if (isFeedbackPoll) {
+      if (feedbackAttemptsRef.current >= MAX_FEEDBACK_POLL_ATTEMPTS) {
+        setPhase('idle');
+        stopPolling();
+        return;
+      }
+    } else if (attemptsRef.current >= MAX_POLL_ATTEMPTS) {
       setPhase('timeout');
       stopPolling();
       return;
@@ -89,6 +116,8 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
     setErrorMessage(null);
     setSubmission(null);
     attemptsRef.current = 0;
+    feedbackAttemptsRef.current = 0;
+    awaitingFeedbackRef.current = false;
     setPhase('submitting');
 
     try {
@@ -142,6 +171,7 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
             {phase === 'submitting' ? 'Submitting…' : phase === 'polling' ? 'Grading…' : 'Submit'}
           </button>
           {phase === 'polling' && <span className="hint">Waiting for results…</span>}
+          {phase === 'polling-feedback' && <span className="hint">Waiting for AI feedback…</span>}
         </div>
       </form>
 

@@ -36,10 +36,20 @@ export function buildDockerRunArgs(opts: DockerRunOptions): string[] {
     '/tmp:rw,noexec,nosuid,size=16m',
     '--cap-drop',
     'ALL',
+    '--cap-add',
+    'SETUID',
+    '--cap-add',
+    'SETGID',
+    // CAP_KILL is required *because* of the uid separation above: a process may
+    // only signal another whose uid matches its own unless it holds CAP_KILL.
+    // The harness (uid 0) must SIGKILL timed-out submission children (uid 65534)
+    // — without this, every per-case timeout fails with `kill EPERM` and the
+    // case reports ERROR instead of TIMEOUT. Grants no ability to affect
+    // anything outside this container's PID namespace.
+    '--cap-add',
+    'KILL',
     '--security-opt',
     'no-new-privileges',
-    '--user',
-    '65534:65534',
     '-v',
     `${opts.hostTmpDir}:/work:ro`,
     '-w',

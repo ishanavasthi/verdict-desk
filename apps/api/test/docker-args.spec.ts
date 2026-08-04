@@ -29,7 +29,6 @@ describe('buildDockerRunArgs (sandbox hardening flags)', () => {
       ['--tmpfs', '/tmp:rw,noexec,nosuid,size=16m'],
       ['--cap-drop', 'ALL'],
       ['--security-opt', 'no-new-privileges'],
-      ['--user', '65534:65534'],
       ['-w', '/work'],
     ];
     for (const [flag, value] of pairs) {
@@ -37,6 +36,25 @@ describe('buildDockerRunArgs (sandbox hardening flags)', () => {
       expect(i).toBeGreaterThanOrEqual(0);
       expect(args[i + 1]).toBe(value);
     }
+  });
+
+  it('adds back ONLY SETUID/SETGID/KILL after --cap-drop ALL, and drops --user entirely', () => {
+    // PID 1 (tini + harness) now runs as in-container root so the harness can
+    // setuid()/setgid() the submission child to a distinct uid (65534) itself
+    // — see harness.js. --user is removed; SETUID/SETGID enable that drop, and
+    // KILL lets the harness SIGKILL a timed-out child that no longer shares its
+    // uid (without it, every per-case timeout fails `kill EPERM`). No other cap.
+    expect(args).not.toContain('--user');
+    const dropIdx = args.indexOf('--cap-drop');
+    expect(dropIdx).toBeGreaterThanOrEqual(0);
+    expect(args[dropIdx + 1]).toBe('ALL');
+    expect(args[dropIdx + 2]).toBe('--cap-add');
+    expect(args[dropIdx + 3]).toBe('SETUID');
+    expect(args[dropIdx + 4]).toBe('--cap-add');
+    expect(args[dropIdx + 5]).toBe('SETGID');
+    expect(args[dropIdx + 6]).toBe('--cap-add');
+    expect(args[dropIdx + 7]).toBe('KILL');
+    expect(args.filter((a) => a === '--cap-add')).toHaveLength(3);
   });
 
   it('includes the standalone --read-only flag', () => {

@@ -36,5 +36,89 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # Catches type errors in files that only ever run through tsx (e.g.
+      # prisma/seed.ts), which `pnpm test` alone would never surface.
+      - name: Typecheck
+        run: pnpm -r typecheck
+
       - name: Test
         run: pnpm test
+
+  browser-smoke:
+    needs: build-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # No `version:` here — action-setup reads pnpm from package.json's
+      # "packageManager" field. Specifying both errors with ERR_PNPM_BAD_PM_VERSION.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Create .env
+        run: cp .env.example .env
+
+      # @prisma/client is code-generated; without this the seed below dies with
+      # "Cannot find module '.prisma/client/default'".
+      - name: Generate Prisma client
+        run: pnpm --filter @verdict/api prisma:generate
+
+      - name: Start db
+        run: docker compose up -d --wait db
+
+      - name: Migrate + seed
+        run: |
+          pnpm --filter @verdict/api prisma:deploy
+          pnpm seed
+
+      - name: Build api + web
+        run: pnpm build
+
+      # dotenv-cli, not bare `node`: the built server reads DATABASE_URL/JWT_SECRET
+      # from the root .env, and ConfigModule only looks for a .env in the cwd.
+      - name: Start api
+        working-directory: apps/api
+        run: |
+          nohup pnpm exec dotenv -e ../../.env -- node dist/main.js > /tmp/api.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:4000/health > /dev/null && exit 0
+            sleep 1
+          done
+          echo "api did not become healthy" && cat /tmp/api.log && exit 1
+
+      - name: Start web
+        working-directory: apps/web
+        run: |
+          nohup pnpm start > /tmp/web.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3000/login > /dev/null && exit 0
+            sleep 1
+          done
+          echo "web did not become healthy" && cat /tmp/web.log && exit 1
+
+      # Install via the pinned playwright-core, not `npx playwright`: npx would
+      # fetch whatever version is latest today and download a chromium revision
+      # that playwright-core@1.62.x then refuses to launch.
+      - name: Install Playwright chromium
+        run: pnpm exec playwright-core install --with-deps chromium
+
+      - name: Run browser smoke test
+        run: node scripts/ci-browser-smoke.mjs
+
+      - name: Upload failure screenshot
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-smoke-failure
+          path: smoke-failure.png
+          if-no-files-found: ignore

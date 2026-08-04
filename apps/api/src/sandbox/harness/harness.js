@@ -8,12 +8,22 @@
  *
  *   docker run ... node:20-alpine node /work/harness.js
  *
- * It runs as the SAME non-root user as the untrusted program, under `--init`
- * (tini as PID 1), inside the same hardened container (--network none,
- * --read-only, --cap-drop ALL, --pids-limit 64, etc — see docker-args.ts).
- * The harness itself is trusted (it ships with the API, untrusted code never
- * touches it), but it must still defend itself against a hostile main.js:
- * fork bombs, infinite loops, output floods, etc.
+ * It runs as PID 1 (tini's child) INSIDE the container as **root**, while
+ * every untrusted `main.js` child it spawns runs as uid/gid 65534 (see the
+ * explicit `{ uid: 65534, gid: 65534 }` on the `spawn()` call below) — a
+ * DISTINCT uid from the harness itself, inside the same hardened container
+ * (--network none, --read-only, --cap-drop ALL + only `SETUID`/`SETGID`
+ * added back, --pids-limit 64, --security-opt no-new-privileges, etc — see
+ * docker-args.ts). `no-new-privileges` does not block this: it blocks
+ * privilege GAIN on execve, not a root process voluntarily dropping
+ * privilege via setuid()/setgid(), which is what Node's `spawn(..., {uid,
+ * gid})` does before exec'ing the child. Because the harness and the
+ * submission no longer share a uid, `main.js` can no longer open
+ * `/proc/1/fd/1` (that's the harness/PID1's own fd, now owned by a
+ * different, unreachable-to-it uid) to corrupt or fabricate its own result
+ * blob — seen below. The harness itself is trusted (it ships with the API,
+ * untrusted code never touches it), but it must still defend itself against
+ * a hostile main.js: fork bombs, infinite loops, output floods, etc.
  *
  * Manifest contract (host-written, read-only, at /work/manifest.json):
  *   { submissionId, perCaseTimeoutMs, maxCaseStdoutBytes, maxCaseStderrBytes,
@@ -26,13 +36,16 @@
  *   { submissionId, results: [...] }
  * main.js's stdout/stderr are always PIPED (never inherited) into per-case
  * collectors, so in normal operation untrusted output does not reach the
- * container's real stdout. This is NOT a hard security boundary, though: main.js
- * runs as the SAME uid as this harness and tini, so it can in principle write to
- * /proc/1/fd/1 and inject bytes into the container's real stdout. It still cannot
- * forge a PASS — expected outputs are withheld from the container and comparison
- * is host-side — so the worst it can do is corrupt/replace its OWN result blob,
- * which the host then rejects (submission → ERROR). Fully closing this needs a
- * distinct uid / hidepid; see the README threat model.
+ * container's real stdout. This USED TO be only a functional (not hard
+ * security) boundary, since main.js ran as the SAME uid as this harness and
+ * PID1: it could in principle write straight to /proc/1/fd/1 and inject
+ * bytes into the container's real stdout, though it still could never forge
+ * a PASS (expected outputs are withheld from the container and comparison
+ * is host-side), so the worst case was corrupting/replacing its OWN result
+ * blob. That gap is now closed: the harness runs as uid 0 and spawns every
+ * submission child at uid/gid 65534 — a DISTINCT, unprivileged uid — so
+ * /proc/1/fd/1 is owned by a uid main.js no longer has, and the write fails
+ * with EACCES/EPERM. See the README threat model.
  */
 
 const { spawn } = require('child_process');
@@ -189,6 +202,18 @@ function makeCappedCollector(capBytes, onExceeded) {
   };
 }
 
+// In production the harness ALWAYS runs as in-container root (see
+// docker-args.ts / the file header), so it can always setuid()/setgid() the
+// submission child down to 65534. The ONLY exception is
+// test/harness-runtime.spec.ts, which runs this exact file as a plain
+// process on the HOST (no Docker, no root) to regression-test I/O behavior
+// without Docker — passing uid/gid there would throw EPERM before the child
+// even starts, since an unprivileged host user cannot setuid() at all. That
+// harness is unprivileged either way, so skipping the drop there does not
+// reopen the /proc/1/fd/1 gap (which only exists when the harness itself is
+// root); it is purely a host-test accommodation.
+const CAN_DROP_PRIVS = typeof process.getuid === 'function' && process.getuid() === 0;
+
 /** Kill the child's whole process group (it was spawned `detached: true`). */
 function killGroup(child, sig) {
   try {
@@ -213,6 +238,13 @@ function runOneCase(id, input, timeoutMs, maxCaseStdoutBytes, maxCaseStderrBytes
         stdio: ['pipe', 'pipe', 'pipe'],
         // Own process group so a fork bomb's children die together with it.
         detached: true,
+        // Drop the child to a DISTINCT, unprivileged uid/gid — the harness
+        // (this process, PID 1) runs as root so it CAN setuid()/setgid()
+        // here, but the submission itself must still NEVER run as root.
+        // This is also what closes the /proc/1/fd/1 self-injection gap:
+        // main.js no longer shares a uid with the harness/PID1, so it can't
+        // open the harness's own stdout fd (see file header).
+        ...(CAN_DROP_PRIVS ? { uid: 65534, gid: 65534 } : {}),
       });
     } catch (err) {
       resolve({

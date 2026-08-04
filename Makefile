@@ -16,7 +16,12 @@ setup: ## Install deps, create .env, pre-pull the sandbox image
 	@[ -f .env ] || (cp .env.example .env && echo "created .env from .env.example")
 	pnpm install
 	pnpm --filter @verdict/api prisma:generate
-	docker pull node:20-alpine
+	@# Pre-pull the sandbox image, but don't let a Docker Hub blip (502/offline)
+	@# block startup when the image is already cached locally — grading only needs
+	@# the local image. Fails loudly only if it's genuinely absent AND unpullable.
+	@docker pull node:20-alpine || docker image inspect node:20-alpine >/dev/null 2>&1 \
+		&& echo "sandbox image node:20-alpine ready" \
+		|| (echo "ERROR: node:20-alpine is neither pullable nor cached locally — the sandbox cannot run" && exit 1)
 
 db-up: ## Start Postgres and block until healthy
 	docker compose up -d --wait db

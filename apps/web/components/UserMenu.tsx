@@ -44,12 +44,17 @@ export default function UserMenu({ email, role }: { email: string; role: Role })
         <span className="hidden max-w-[12ch] truncate text-sm text-muted-foreground sm:inline">{email}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-60">
-        <DropdownMenuLabel className="flex flex-col gap-1.5">
-          <span className="truncate font-normal">{email}</span>
-          <Badge variant="outline" className="w-fit font-mono text-[0.65rem] uppercase tracking-wider">
-            {role.toLowerCase()}
-          </Badge>
-        </DropdownMenuLabel>
+        {/* Base UI's GroupLabel reads MenuGroupContext, so it MUST be inside a
+            Group — unlike the Radix flavour of shadcn, where a bare Label is fine.
+            Without this wrapper the whole menu throws on open. */}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="flex flex-col gap-1.5">
+            <span className="truncate font-normal">{email}</span>
+            <Badge variant="outline" className="w-fit font-mono text-[0.65rem] uppercase tracking-wider">
+              {role.toLowerCase()}
+            </Badge>
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem variant="destructive" disabled={loading} onClick={handleLogout}>

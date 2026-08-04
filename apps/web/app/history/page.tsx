@@ -1,15 +1,16 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getAuthToken } from '../../lib/auth';
-import { getSubmissionHistory, type SubmissionSummary } from '../../lib/api';
-import { statusBadgeClass, submissionStatusLabel } from '../../lib/status';
+import { getAuthToken } from '@/lib/auth';
+import { getSubmissionHistory, type SubmissionSummary } from '@/lib/api';
+import { statusOutcome, submissionStatusLabel } from '@/lib/status';
+import StatusBadge from '@/components/StatusBadge';
+import PageShell from '@/components/PageShell';
 
 export const dynamic = 'force-dynamic';
 
 async function loadHistory(token: string): Promise<{ submissions: SubmissionSummary[]; unreachable: boolean }> {
   try {
-    const submissions = await getSubmissionHistory(token);
-    return { submissions, unreachable: false };
+    return { submissions: await getSubmissionHistory(token), unreachable: false };
   } catch {
     return { submissions: [], unreachable: true };
   }
@@ -24,37 +25,41 @@ export default async function HistoryPage() {
   const { submissions, unreachable } = await loadHistory(token);
 
   return (
-    <main className="container">
-      <header className="page-header">
-        <h1>History</h1>
-        <Link href="/" className="btn btn-secondary">
-          ← Problems
-        </Link>
-      </header>
+    <PageShell eyebrow="Record" title="History" description="Every ruling on your past submissions.">
+      {unreachable ? (
+        <EmptyCard>Could not load submission history — API unreachable.</EmptyCard>
+      ) : submissions.length === 0 ? (
+        <EmptyCard>No submissions yet — solve a problem to see it here.</EmptyCard>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {submissions.map((submission) => (
+            <li key={submission.id}>
+              <Link
+                href={`/submissions/${submission.id}`}
+                className="flex items-center gap-4 rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:border-primary/40 hover:bg-accent/40"
+              >
+                <StatusBadge outcome={statusOutcome(submission.status)} dot>
+                  {submissionStatusLabel(submission.status)}
+                </StatusBadge>
+                <span className="font-mono text-sm font-medium tabular-nums">
+                  {submission.score !== null ? `${submission.score}%` : '—'}
+                </span>
+                <span className="ml-auto font-mono text-xs text-muted-foreground">
+                  {new Date(submission.createdAt).toLocaleString()}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </PageShell>
+  );
+}
 
-      <section className="card">
-        {unreachable ? (
-          <p className="empty-state">Could not load submission history — API unreachable.</p>
-        ) : submissions.length === 0 ? (
-          <p className="empty-state">No submissions yet — solve a problem to see it here.</p>
-        ) : (
-          <ul className="history-list">
-            {submissions.map((submission) => (
-              <li key={submission.id} className="history-item">
-                <Link href={`/submissions/${submission.id}`} className="history-link">
-                  <span className={`badge ${statusBadgeClass(submission.status)}`}>
-                    {submissionStatusLabel(submission.status)}
-                  </span>
-                  <span className="history-score">
-                    {submission.score !== null ? `${submission.score}%` : '—'}
-                  </span>
-                  <span className="history-date">{new Date(submission.createdAt).toLocaleString()}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </main>
+function EmptyCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center text-sm text-muted-foreground">
+      {children}
+    </div>
   );
 }

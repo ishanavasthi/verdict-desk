@@ -6,6 +6,7 @@
  * manually to the API for protected endpoints (see `lib/api.ts`).
  */
 
+import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { AUTH_COOKIE_NAME, getMe as fetchMe, type User } from './api';
 
@@ -20,7 +21,7 @@ export async function getAuthToken(): Promise<string | null> {
  * Returns null when there's no cookie, the session is invalid/expired, or
  * the API is unreachable — callers treat all of those as "not logged in".
  */
-export async function getMe(): Promise<User | null> {
+export const getMe = cache(async (): Promise<User | null> => {
   const token = await getAuthToken();
   if (!token) {
     return null;
@@ -30,4 +31,4 @@ export async function getMe(): Promise<User | null> {
   } catch {
     return null;
   }
-}
+});

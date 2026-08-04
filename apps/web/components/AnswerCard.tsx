@@ -1,16 +1,14 @@
-import type { Answer } from '../lib/api';
-import { answerAuthorTypeLabel, answerStateBadgeClass, answerStateLabel } from '../lib/status';
+import type { Answer } from '@/lib/api';
+import { answerAuthorTypeLabel, answerStateLabel, answerStateOutcome } from '@/lib/status';
+import StatusBadge from './StatusBadge';
 
 /**
- * Renders a single answer to a doubt: author-type tag, review-state badge,
- * and its content as PLAIN TEXT (never HTML/markdown — content is student-
- * or AI-authored and untrusted).
+ * A single answer to a doubt: author-type tag, review-state chip, and content
+ * as PLAIN TEXT (never HTML/markdown — student/AI-authored, untrusted).
  *
- * `hidePendingContent`: when true (the viewer is the doubt's own author and
- * this is their doubt's own still-PENDING_REVIEW AI answer), the raw
- * unreviewed draft is withheld and replaced with a "awaiting review" note —
- * the student is told an answer is coming, but doesn't get an early,
- * unvetted look at it.
+ * `hidePendingContent`: when the viewer is the doubt's own author and this is
+ * their own still-PENDING_REVIEW AI answer, the raw draft is withheld and
+ * replaced with an "awaiting review" note.
  */
 export default function AnswerCard({
   answer,
@@ -22,22 +20,24 @@ export default function AnswerCard({
   const displayContent = answer.editedContent ?? answer.content;
 
   return (
-    <li className="answer-item">
-      <div className="answer-header">
-        <span className="author-type-tag">{answerAuthorTypeLabel(answer.authorType)}</span>
-        <span className={`badge badge-sm ${answerStateBadgeClass(answer.state)}`}>
-          {answerStateLabel(answer.state)}
+    <li className="rounded-lg border border-border bg-muted/30 px-3.5 py-3">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span className="font-mono text-xs font-medium text-muted-foreground">
+          {answerAuthorTypeLabel(answer.authorType)}
         </span>
-        <span className="answer-date">{new Date(answer.createdAt).toLocaleString()}</span>
+        <StatusBadge outcome={answerStateOutcome(answer.state)}>{answerStateLabel(answer.state)}</StatusBadge>
+        <span className="ml-auto font-mono text-[0.7rem] text-muted-foreground">
+          {new Date(answer.createdAt).toLocaleString()}
+        </span>
       </div>
 
       {hidePendingContent ? (
-        <p className="answer-pending-note">
-          &#8987; awaiting teacher review &mdash; a teacher will review this AI-generated answer before it&rsquo;s
-          shown to you.
+        <p className="mt-2 flex items-start gap-2 text-sm italic text-[var(--warn)]">
+          <span aria-hidden="true">⏳</span>
+          Awaiting teacher review — a teacher will review this AI-generated answer before it&rsquo;s shown to you.
         </p>
       ) : (
-        <p className="answer-content plain-text">{displayContent}</p>
+        <p className="plain-text mt-2 text-sm">{displayContent}</p>
       )}
     </li>
   );

@@ -2,22 +2,20 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { ReviewQueueItem } from '../lib/api';
+import { toast } from 'sonner';
+import type { ReviewQueueItem } from '@/lib/api';
 import ReviewCard from './ReviewCard';
 
 /**
- * Client-side list of PENDING_REVIEW answers. Approve/reject/edit are
- * handled per-card (see ReviewCard); on success we optimistically drop the
- * item locally. On a 409 (another teacher already handled it) we surface a
- * notice and do a full `router.refresh()` to resync with the server.
+ * Client-side list of PENDING_REVIEW answers. Approve/reject/edit are handled
+ * per-card (see ReviewCard); on success we optimistically drop the item. On a
+ * 409 (another teacher already handled it) we toast and re-fetch to resync.
  */
 export default function ReviewQueueList({ initialQueue }: { initialQueue: ReviewQueueItem[] }) {
   const router = useRouter();
   const [queue, setQueue] = useState(initialQueue);
-  const [notice, setNotice] = useState<string | null>(null);
 
-  // Resync local state whenever the server component re-fetches (e.g. after
-  // the router.refresh() triggered by a 409 below).
+  // Resync whenever the server component re-fetches (e.g. after a 409 refresh).
   useEffect(() => {
     setQueue(initialQueue);
   }, [initialQueue]);
@@ -27,25 +25,28 @@ export default function ReviewQueueList({ initialQueue }: { initialQueue: Review
   }
 
   function handleConflict() {
-    setNotice('This answer was already handled — refreshing.');
+    toast.info('This answer was already handled — refreshing.');
     router.refresh();
   }
 
+  if (queue.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-border bg-card/50 px-6 py-14 text-center">
+        <p className="text-sm text-muted-foreground">The bench is clear — nothing waiting for review.</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="review-queue">
-      {notice && <p className="form-error">{notice}</p>}
-      {queue.length === 0 ? (
-        <p className="empty-state">Nothing waiting for review right now.</p>
-      ) : (
-        queue.map((item) => (
-          <ReviewCard
-            key={item.id}
-            item={item}
-            onHandled={() => handleHandled(item.id)}
-            onConflict={handleConflict}
-          />
-        ))
-      )}
+    <div className="flex flex-col gap-4">
+      {queue.map((item) => (
+        <ReviewCard
+          key={item.id}
+          item={item}
+          onHandled={() => handleHandled(item.id)}
+          onConflict={handleConflict}
+        />
+      ))}
     </div>
   );
 }

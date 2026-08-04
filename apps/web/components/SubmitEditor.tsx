@@ -1,10 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import SubmissionResults from './SubmissionResults';
 import LiveSubmissionView from './LiveSubmissionView';
-import { isTerminalStatus, type CreateSubmissionResponse, type SubmissionDetail } from '../lib/api';
+import CodeEditor from './CodeEditor';
+import { isTerminalStatus, type CreateSubmissionResponse, type SubmissionDetail } from '@/lib/api';
 
 const POLL_INTERVAL_MS = 1000;
 const MAX_POLL_ATTEMPTS = 30; // ~30s cap before we tell the user to check back later.
@@ -12,7 +15,7 @@ const MAX_POLL_ATTEMPTS = 30; // ~30s cap before we tell the user to check back 
 type Phase = 'idle' | 'submitting' | 'polling' | 'busy' | 'timeout' | 'error';
 
 function starterCode(problemTitle: string): string {
-  return `// ${problemTitle}\n// Write your solution below, then hit Submit.\n`;
+  return `// ${problemTitle}\n// Read stdin, write your answer to stdout.\n`;
 }
 
 export default function SubmitEditor({ problemId, problemTitle }: { problemId: string; problemTitle: string }) {
@@ -30,9 +33,7 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (pollTimer.current) {
-        clearTimeout(pollTimer.current);
-      }
+      if (pollTimer.current) clearTimeout(pollTimer.current);
     };
   }, []);
 
@@ -52,16 +53,12 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
 
     try {
       const res = await fetch(`/api/submissions/${id}`, { cache: 'no-store' });
-
       if (res.status === 401) {
         stopPolling();
         router.push('/login');
         return;
       }
-
-      if (!res.ok) {
-        throw new Error(`status ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`status ${res.status}`);
 
       const data: SubmissionDetail = await res.json();
       if (!mountedRef.current) return;
@@ -73,8 +70,7 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
         return;
       }
     } catch {
-      // Transient errors while polling are swallowed — we just keep trying
-      // until the cap is hit.
+      // Transient errors while polling are swallowed — keep trying to the cap.
     }
 
     if (!mountedRef.current) return;
@@ -84,12 +80,10 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
       stopPolling();
       return;
     }
-
     pollTimer.current = setTimeout(() => pollSubmission(id), POLL_INTERVAL_MS);
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSubmit() {
     stopPolling();
     setErrorMessage(null);
     setSubmission(null);
@@ -107,12 +101,10 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
         router.push('/login');
         return;
       }
-
       if (res.status === 503) {
         setPhase('busy');
         return;
       }
-
       if (!res.ok) {
         setErrorMessage(`Submit failed (status ${res.status}).`);
         setPhase('error');
@@ -131,45 +123,83 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
   const isBusy = phase === 'submitting' || phase === 'polling';
 
   return (
-    <section className="card editor-card">
-      <h2>Your solution</h2>
-      <form onSubmit={handleSubmit} className="editor-form">
-        <textarea
-          className="code-editor"
-          value={code}
-          onChange={(event) => setCode(event.target.value)}
-          spellCheck={false}
-          rows={16}
-          aria-label="Solution code"
-        />
-        <div className="editor-actions">
-          <button type="submit" className="btn btn-primary" disabled={isBusy}>
+    <div className="flex h-full flex-col">
+      {/* Toolbar */}
+      <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2.5">
+        <span className="eyebrow">Chamber · Code</span>
+        <Badge variant="outline" className="font-mono text-[0.65rem] text-muted-foreground">
+          JavaScript · Node 20
+        </Badge>
+        <div className="ml-auto flex items-center gap-2.5">
+          {phase === 'polling' && <span className="text-xs text-muted-foreground">Grading…</span>}
+          <Button
+            size="sm"
+            onClick={handleSubmit}
+            disabled={isBusy}
+            className="gap-1.5"
+            title="Submit for grading (⌘/Ctrl + Enter)"
+          >
+            {isBusy && <span className="spinner-on-primary" aria-hidden="true" />}
             {phase === 'submitting' ? 'Submitting…' : phase === 'polling' ? 'Grading…' : 'Submit'}
-          </button>
-          {phase === 'polling' && <span className="hint">Waiting for results…</span>}
+          </Button>
         </div>
-      </form>
+      </div>
 
-      {phase === 'busy' && (
-        <p className="form-error">Grading queue is busy right now — please retry in a few seconds.</p>
-      )}
-      {phase === 'error' && errorMessage && <p className="form-error">{errorMessage}</p>}
-      {phase === 'timeout' && (
-        <p className="form-error">
-          Grading is taking longer than expected. Check the <a href="/history">History</a> page shortly for the
-          result.
-        </p>
-      )}
+      {/* Editor */}
+      <div
+        className="min-h-[240px] flex-1"
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !isBusy) {
+            e.preventDefault();
+            handleSubmit();
+          }
+        }}
+      >
+        <CodeEditor value={code} onChange={setCode} />
+      </div>
 
-      {submission &&
-        (isTerminalStatus(submission.status) ? (
-          // Grading finished — hand off to the live view, which keeps the AI
-          // feedback fresh (poll + manual refresh) without a page reload.
-          <LiveSubmissionView initial={submission} key={submission.id} />
+      {/* Console / verdict */}
+      <div className="max-h-[46%] shrink-0 overflow-y-auto border-t border-border bg-muted/20">
+        {phase === 'busy' ? (
+          <ConsoleNote tone="warn">Grading queue is busy right now — please retry in a few seconds.</ConsoleNote>
+        ) : phase === 'error' && errorMessage ? (
+          <ConsoleNote tone="fail">{errorMessage}</ConsoleNote>
+        ) : phase === 'timeout' ? (
+          <ConsoleNote tone="warn">
+            Grading is taking longer than expected. Check your{' '}
+            <a href="/history" className="font-medium text-brass underline underline-offset-2">
+              History
+            </a>{' '}
+            shortly.
+          </ConsoleNote>
+        ) : submission ? (
+          isTerminalStatus(submission.status) ? (
+            <LiveSubmissionView initial={submission} key={submission.id} />
+          ) : (
+            <SubmissionResults submission={submission} />
+          )
         ) : (
-          // Still grading — show the in-progress snapshot (no feedback poll yet).
-          <SubmissionResults submission={submission} />
-        ))}
-    </section>
+          <div className="flex items-center gap-2 px-4 py-4 text-sm text-muted-foreground">
+            <span className="font-mono text-brass">▸</span>
+            Submit your solution to see the verdict and per-case results.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ConsoleNote({ children, tone }: { children: React.ReactNode; tone: 'warn' | 'fail' }) {
+  return (
+    <p
+      className="m-4 rounded-md border px-3 py-2 text-sm"
+      style={{
+        borderColor: `color-mix(in srgb, var(--${tone === 'warn' ? 'warn' : 'fail'}) 35%, transparent)`,
+        background: `color-mix(in srgb, var(--${tone === 'warn' ? 'warn' : 'fail'}) 10%, transparent)`,
+        color: `var(--${tone === 'warn' ? 'warn' : 'fail'})`,
+      }}
+    >
+      {children}
+    </p>
   );
 }

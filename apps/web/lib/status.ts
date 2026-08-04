@@ -1,5 +1,65 @@
 import type { AnswerAuthorType, AnswerState, FeedbackSeverity, SubmissionStatus, TestResultStatus } from './api';
 
+/** Coarse visual outcome used by chips and the verdict stamp. */
+export type Outcome = 'pass' | 'fail' | 'warn' | 'info' | 'pending';
+
+/** Map any submission- or test-result status to a semantic outcome. */
+export function statusOutcome(status: SubmissionStatus | TestResultStatus | string): Outcome {
+  switch (status) {
+    case 'PASSED':
+    case 'PASS':
+      return 'pass';
+    case 'FAILED':
+    case 'FAIL':
+    case 'ERROR':
+      return 'fail';
+    case 'TIMEOUT':
+      return 'warn';
+    case 'QUEUED':
+    case 'RUNNING':
+      return 'pending';
+    default:
+      return 'pending';
+  }
+}
+
+/** Map a feedback severity to a semantic outcome (for the severity chip). */
+export function severityOutcome(severity: FeedbackSeverity): Outcome {
+  switch (severity) {
+    case 'info':
+      return 'info';
+    case 'low':
+      return 'pass';
+    case 'medium':
+      return 'warn';
+    case 'high':
+      return 'fail';
+    default:
+      return 'info';
+  }
+}
+
+/** Map an answer review-state to a semantic outcome (for the state chip). */
+export function answerStateOutcome(state: AnswerState): Outcome {
+  switch (state) {
+    case 'APPROVED':
+      return 'pass';
+    case 'PENDING_REVIEW':
+      return 'warn';
+    case 'REJECTED':
+      return 'fail';
+    case 'DRAFT':
+      return 'pending';
+    default:
+      return 'pending';
+  }
+}
+
+/** The chip utility class for a given outcome (see globals.css). */
+export function chipClass(outcome: Outcome): string {
+  return `chip-${outcome === 'pending' ? 'muted' : outcome}`;
+}
+
 const SUBMISSION_STATUS_LABEL: Record<SubmissionStatus, string> = {
   QUEUED: 'Queued',
   RUNNING: 'Running',

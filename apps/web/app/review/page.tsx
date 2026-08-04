@@ -1,9 +1,8 @@
 import { redirect } from 'next/navigation';
-import { getAuthToken, getMe } from '../../lib/auth';
-import { getReviewQueue, type ReviewQueueItem } from '../../lib/api';
-import NavLinks from '../../components/NavLinks';
-import LogoutButton from '../../components/LogoutButton';
-import ReviewQueueList from '../../components/ReviewQueueList';
+import { getAuthToken, getMe } from '@/lib/auth';
+import { getReviewQueue, type ReviewQueueItem } from '@/lib/api';
+import ReviewQueueList from '@/components/ReviewQueueList';
+import PageShell from '@/components/PageShell';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,27 +28,19 @@ export default async function ReviewPage() {
   }
 
   return (
-    <main className="container container-wide">
-      <header className="page-header">
-        <div>
-          <h1>Review queue</h1>
-          <p className="user-meta">
-            {user.email} <span className="role-pill">{user.role.toLowerCase()}</span>
-          </p>
+    <PageShell
+      width="lg"
+      eyebrow="The bench"
+      title="Review queue"
+      description="AI-drafted answers awaiting your ruling. Nothing reaches a student until you approve it."
+    >
+      {unreachable ? (
+        <div className="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center text-sm text-muted-foreground">
+          Could not load the review queue — API unreachable.
         </div>
-        <div className="header-actions">
-          <NavLinks role={user.role} />
-          <LogoutButton />
-        </div>
-      </header>
-
-      <section className="card">
-        {unreachable ? (
-          <p className="empty-state">Could not load the review queue — API unreachable.</p>
-        ) : (
-          <ReviewQueueList initialQueue={queue} />
-        )}
-      </section>
-    </main>
+      ) : (
+        <ReviewQueueList initialQueue={queue} />
+      )}
+    </PageShell>
   );
 }

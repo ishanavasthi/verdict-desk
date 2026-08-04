@@ -1,10 +1,10 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { getAuthToken, getMe } from '../../../lib/auth';
-import { ApiError, getDoubt, type Doubt } from '../../../lib/api';
-import AnswerCard from '../../../components/AnswerCard';
-import NavLinks from '../../../components/NavLinks';
-import LogoutButton from '../../../components/LogoutButton';
+import { getAuthToken, getMe } from '@/lib/auth';
+import { ApiError, getDoubt, type Doubt } from '@/lib/api';
+import AnswerCard from '@/components/AnswerCard';
+import PageShell from '@/components/PageShell';
+import { Button } from '@/components/ui/button';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,36 +39,41 @@ export default async function DoubtDetailPage({ params }: { params: Promise<{ id
   const isOwn = doubt.author?.email === user.email;
 
   return (
-    <main className="container">
-      <header className="page-header">
-        <h1>Doubt</h1>
-        <div className="header-actions">
-          <NavLinks role={user.role} />
-          <LogoutButton />
-        </div>
-      </header>
-
-      <section className="card">
+    <PageShell
+      eyebrow="Chambers"
+      title="Doubt"
+      actions={
+        <Button variant="outline" size="sm" render={<Link href="/doubts" />}>
+          ← Doubts
+        </Button>
+      }
+    >
+      <div className="rounded-xl border border-border bg-card p-5">
         {unreachable ? (
-          <p className="empty-state">Could not load this doubt — API unreachable.</p>
+          <p className="py-8 text-center text-sm text-muted-foreground">Could not load this doubt — API unreachable.</p>
         ) : (
           <>
-            <div className="doubt-item-header">
-              <h2>{doubt.title}</h2>
-              <span className="doubt-author">{doubt.author?.name ?? doubt.author?.email ?? 'Unknown'}</span>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <h2 className="text-lg font-semibold">{doubt.title}</h2>
+              <span className="font-mono text-xs text-muted-foreground">
+                {doubt.author?.name ?? doubt.author?.email ?? 'Unknown'}
+              </span>
             </div>
-            <p className="doubt-body plain-text">{doubt.body}</p>
+            <p className="plain-text mt-2 text-sm text-foreground/90">{doubt.body}</p>
             {doubt.problemId && (
-              <Link href={`/problems/${doubt.problemId}`} className="difficulty-pill">
-                Related problem
+              <Link
+                href={`/problems/${doubt.problemId}`}
+                className="mt-2 inline-block font-mono text-[0.7rem] text-brass hover:underline"
+              >
+                ↳ related problem
               </Link>
             )}
 
-            <h3 className="answers-heading">Answers</h3>
+            <p className="eyebrow mb-3 mt-6">Answers</p>
             {doubt.answers.length === 0 ? (
-              <p className="empty-state">No answers yet.</p>
+              <p className="text-sm text-muted-foreground">No answers yet.</p>
             ) : (
-              <ul className="answer-list">
+              <ul className="flex flex-col gap-2">
                 {doubt.answers.map((answer) => (
                   <AnswerCard
                     key={answer.id}
@@ -80,7 +85,7 @@ export default async function DoubtDetailPage({ params }: { params: Promise<{ id
             )}
           </>
         )}
-      </section>
-    </main>
+      </div>
+    </PageShell>
   );
 }

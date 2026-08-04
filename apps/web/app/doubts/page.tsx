@@ -1,14 +1,12 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getAuthToken, getMe } from '../../lib/auth';
-import { ApiError, getDoubts, getProblems, type Doubt, type Problem, type User } from '../../lib/api';
-import AnswerCard from '../../components/AnswerCard';
-import DoubtForm from '../../components/DoubtForm';
-import NavLinks from '../../components/NavLinks';
-import LogoutButton from '../../components/LogoutButton';
+import { getAuthToken, getMe } from '@/lib/auth';
+import { ApiError, getDoubts, getProblems, type Doubt, type Problem, type User } from '@/lib/api';
+import AnswerCard from '@/components/AnswerCard';
+import DoubtForm from '@/components/DoubtForm';
+import PageShell from '@/components/PageShell';
 
-// Auth-gated + live data: can never be statically rendered, and the API may
-// not even be running during `next build`.
+// Auth-gated + live data: can never be statically rendered.
 export const dynamic = 'force-dynamic';
 
 async function loadProblemOptions(): Promise<Problem[]> {
@@ -47,69 +45,72 @@ export default async function DoubtsPage() {
   const problems = await loadProblemOptions();
 
   return (
-    <main className="container container-wide">
-      <header className="page-header">
-        <div>
-          <h1>Doubts</h1>
-          <p className="user-meta">
-            {user.email} <span className="role-pill">{user.role.toLowerCase()}</span>
-          </p>
-        </div>
-        <div className="header-actions">
-          <NavLinks role={user.role} />
-          <LogoutButton />
-        </div>
-      </header>
+    <PageShell
+      width="lg"
+      eyebrow="Chambers"
+      title="Doubts"
+      description="Ask a question — an AI drafts an answer that a teacher must approve before anyone else sees it."
+    >
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <section className="h-fit rounded-xl border border-border bg-card p-5 lg:sticky lg:top-20">
+          <h2 className="mb-4 text-sm font-semibold">Ask a question</h2>
+          <DoubtForm problems={problems} />
+        </section>
 
-      <section className="card">
-        <h2>Ask a question</h2>
-        <DoubtForm problems={problems} />
-      </section>
+        <section>
+          {unreachable ? (
+            <EmptyCard>Could not load doubts — API unreachable.</EmptyCard>
+          ) : doubts.length === 0 ? (
+            <EmptyCard>No doubts yet — be the first to ask one.</EmptyCard>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {doubts.map((doubt) => (
+                <li key={doubt.id} className="rounded-xl border border-border bg-card p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <Link href={`/doubts/${doubt.id}`} className="font-medium hover:text-primary hover:underline">
+                      {doubt.title}
+                    </Link>
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {doubt.author?.name ?? doubt.author?.email ?? 'Unknown'}
+                    </span>
+                  </div>
+                  <p className="plain-text mt-2 text-sm text-muted-foreground">{doubt.body}</p>
+                  {doubt.problemId && (
+                    <Link
+                      href={`/problems/${doubt.problemId}`}
+                      className="mt-2 inline-block font-mono text-[0.7rem] text-brass hover:underline"
+                    >
+                      ↳ related problem
+                    </Link>
+                  )}
 
-      <section className="card doubt-board-card">
-        <h2>Doubt board</h2>
+                  {doubt.answers.length > 0 && (
+                    <ul className="mt-3 flex flex-col gap-2 border-t border-dashed border-border pt-3">
+                      {doubt.answers.map((answer) => (
+                        <AnswerCard
+                          key={answer.id}
+                          answer={answer}
+                          hidePendingContent={
+                            isOwnDoubt(user, doubt) && answer.authorType === 'AI' && answer.state === 'PENDING_REVIEW'
+                          }
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </PageShell>
+  );
+}
 
-        {unreachable ? (
-          <p className="empty-state">Could not load doubts — API unreachable.</p>
-        ) : doubts.length === 0 ? (
-          <p className="empty-state">No doubts yet — be the first to ask one above.</p>
-        ) : (
-          <ul className="doubt-list">
-            {doubts.map((doubt) => (
-              <li key={doubt.id} className="doubt-item">
-                <div className="doubt-item-header">
-                  <Link href={`/doubts/${doubt.id}`} className="doubt-title-link">
-                    <h3>{doubt.title}</h3>
-                  </Link>
-                  <span className="doubt-author">{doubt.author?.name ?? doubt.author?.email ?? 'Unknown'}</span>
-                </div>
-                <p className="doubt-body plain-text">{doubt.body}</p>
-                {doubt.problemId && (
-                  <Link href={`/problems/${doubt.problemId}`} className="difficulty-pill">
-                    Related problem
-                  </Link>
-                )}
-
-                {doubt.answers.length === 0 ? (
-                  <p className="empty-state">No answers yet.</p>
-                ) : (
-                  <ul className="answer-list">
-                    {doubt.answers.map((answer) => (
-                      <AnswerCard
-                        key={answer.id}
-                        answer={answer}
-                        hidePendingContent={
-                          isOwnDoubt(user, doubt) && answer.authorType === 'AI' && answer.state === 'PENDING_REVIEW'
-                        }
-                      />
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </main>
+function EmptyCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center text-sm text-muted-foreground">
+      {children}
+    </div>
   );
 }

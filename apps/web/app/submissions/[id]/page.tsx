@@ -1,8 +1,10 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { getAuthToken } from '../../../lib/auth';
-import { ApiError, getSubmission, type SubmissionDetail } from '../../../lib/api';
-import LiveSubmissionView from '../../../components/LiveSubmissionView';
+import { getAuthToken } from '@/lib/auth';
+import { ApiError, getSubmission, type SubmissionDetail } from '@/lib/api';
+import LiveSubmissionView from '@/components/LiveSubmissionView';
+import { Button } from '@/components/ui/button';
+import PageShell from '@/components/PageShell';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,33 +30,26 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
       redirect('/login');
     }
     unreachable = true;
-    submission = {
-      id,
-      problemId: '',
-      status: 'QUEUED',
-      score: null,
-      results: [],
-      feedbackStatus: 'PENDING',
-      feedback: null,
-    };
+    submission = { id, problemId: '', status: 'QUEUED', score: null, results: [], feedbackStatus: 'PENDING', feedback: null };
   }
 
   return (
-    <main className="container">
-      <header className="page-header">
-        <h1>Submission</h1>
-        <Link href="/history" className="btn btn-secondary">
+    <PageShell
+      eyebrow="Ruling"
+      title="Submission"
+      actions={
+        <Button variant="outline" size="sm" render={<Link href="/history" />}>
           ← History
-        </Link>
-      </header>
-
-      <section className="card">
+        </Button>
+      }
+    >
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
         {unreachable ? (
-          <p className="empty-state">Could not load this submission — API unreachable.</p>
+          <p className="px-6 py-10 text-center text-sm text-muted-foreground">Could not load this submission — API unreachable.</p>
         ) : (
           <LiveSubmissionView initial={submission} />
         )}
-      </section>
-    </main>
+      </div>
+    </PageShell>
   );
 }

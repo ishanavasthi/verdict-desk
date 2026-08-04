@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SubmissionStatus, TestCase, TestResultStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AiFeedbackService } from '../ai/feedback.service';
 import { SandboxRunnerService } from './runner.service';
 import { HarnessCaseResult, computeScore, computeSubmissionStatus, computeVerdict } from './grading-logic';
 
@@ -29,6 +30,7 @@ export class GradingService {
     private readonly prisma: PrismaService,
     private readonly runner: SandboxRunnerService,
     private readonly config: ConfigService,
+    private readonly aiFeedback: AiFeedbackService,
   ) {
     const configured = Number(this.config.get<string>('GRADING_PER_CASE_TIMEOUT_MS'));
     this.perCaseTimeoutMs =
@@ -136,7 +138,30 @@ export class GradingService {
         testCases,
         `failed to persist grading result: ${(err as Error).message}`,
       );
+      return;
     }
+
+    // The submission is already in a terminal state (PASSED/FAILED) at this
+    // point — AI feedback is generated ASYNCHRONOUSLY (fire-and-forget) and
+    // must never fail or block grading, nor leave the submission
+    // non-terminal. ERROR submissions (infra failures, above) are skipped —
+    // there's no meaningful code output to critique.
+    if (status === 'PASSED' || status === 'FAILED') {
+      this.triggerFeedback(submissionId);
+    }
+  }
+
+  /**
+   * Fire-and-forget: intentionally NOT awaited by `grade()`. Any failure
+   * (LLM error, validation error, DB error) is caught here and only logged —
+   * it must never propagate to, delay, or fail the grading flow.
+   */
+  private triggerFeedback(submissionId: string): void {
+    this.aiFeedback.generateForSubmission(submissionId).catch((err) => {
+      this.logger.error(
+        `AI feedback generation failed for submission ${submissionId}: ${(err as Error).message}`,
+      );
+    });
   }
 
   private async markInfraError(

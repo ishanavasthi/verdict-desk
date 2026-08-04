@@ -34,6 +34,11 @@ export class LlmService {
     return this.mock;
   }
 
+  /** The configured model id (used e.g. to stamp `AiFeedback.model`). */
+  get modelName(): string {
+    return this.model;
+  }
+
   async chat(prompt: string): Promise<string> {
     if (this.mock) {
       return this.mockResponse(prompt);
@@ -48,7 +53,20 @@ export class LlmService {
     const client = new ChatOpenAI({
       apiKey: this.apiKey,
       model: this.model,
-      configuration: { baseURL: this.baseURL },
+      configuration: {
+        baseURL: this.baseURL,
+        // The openai SDK's Node shim defaults to the `node-fetch` package.
+        // Some OpenAI-compatible gateways (incl. NVIDIA NIM, for slower
+        // "reasoning" models) hold the connection open for a long time before
+        // the first byte; node-fetch has been observed to drop those
+        // connections (`FetchError: ... ETIMEDOUT`) in some network
+        // environments. Node's native `fetch` (global since Node 18) handles
+        // the same long-lived responses reliably, so prefer it explicitly.
+        // Cast via `any`: the openai SDK's `Fetch` type and lib.dom's global
+        // `fetch` type diverge slightly across TS lib configs (ts-jest vs.
+        // tsc), so a narrower cast is brittle here.
+        fetch: globalThis.fetch as any,
+      },
     });
 
     const res = await client.invoke(prompt);
@@ -70,13 +88,23 @@ export class LlmService {
       : String(content);
   }
 
-  /** Canned, deterministic, valid JSON so downstream JSON.parse always succeeds. */
+  /**
+   * Canned, deterministic, valid JSON so downstream JSON.parse always
+   * succeeds with NO network call and NO API key. Shaped to match the
+   * AiFeedback strict schema (summary/severity/suggestions — see
+   * ai/feedback-validation.ts) so the feedback pipeline validates and
+   * persists this cleanly end-to-end in MOCK mode.
+   */
   private mockResponse(prompt: string): string {
     return JSON.stringify({
-      summary: 'Mock LLM response (MOCK_LLM enabled, no network call made).',
+      summary: `Mock LLM response (MOCK_LLM enabled, no network call made; prompt was ${prompt.length} chars).`,
       severity: 'info',
-      model: this.model,
-      promptChars: prompt.length,
+      suggestions: [
+        {
+          title: 'Mock suggestion',
+          detail: 'This is a deterministic, canned suggestion returned by the MOCK LLM client — no network call was made.',
+        },
+      ],
     });
   }
 }

@@ -25,12 +25,26 @@ export interface CreateSubmissionResponse {
   status: string;
 }
 
+/**
+ * `unreviewed` is always `true`: the code-feedback path has NO human review
+ * gate (unlike the M4 doubt-answer path) — it is AI output shown as-is,
+ * flagged only as VALID (schema-conformant) or FLAGGED (failed validation
+ * twice; `content` is then a safe fallback, never unvalidated free text).
+ */
+export interface SubmissionFeedbackView {
+  status: 'VALID' | 'FLAGGED';
+  model: string;
+  unreviewed: true;
+  content: unknown;
+}
+
 export interface SubmissionView {
   id: string;
   problemId: string;
   status: string;
   score: number | null;
   results: RedactedTestResultView[];
+  feedback: SubmissionFeedbackView | null;
 }
 
 export interface SubmissionHistoryItem {
@@ -105,6 +119,7 @@ export class SubmissionsController {
       },
       include: {
         testResults: { include: { testCase: { select: { hidden: true } } } },
+        aiFeedback: true,
       },
     });
     if (!submission) {
@@ -126,6 +141,14 @@ export class SubmissionsController {
       status: submission.status,
       score: submission.score,
       results: redactResults(rawResults, hiddenByTestCaseId),
+      feedback: submission.aiFeedback
+        ? {
+            status: submission.aiFeedback.validationStatus as 'VALID' | 'FLAGGED',
+            model: submission.aiFeedback.model,
+            unreviewed: true,
+            content: submission.aiFeedback.content,
+          }
+        : null,
     };
   }
 }

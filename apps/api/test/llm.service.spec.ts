@@ -19,7 +19,12 @@ describe('LlmService (MOCK mode)', () => {
     expect(typeof parsed).toBe('object');
     expect(parsed).toHaveProperty('summary');
     expect(parsed).toHaveProperty('severity');
-    expect(parsed.model).toBe('test-model');
+    expect(Array.isArray(parsed.suggestions)).toBe(true);
+  });
+
+  it('exposes the configured model via modelName (independent of the JSON content)', () => {
+    const llm = build({ MOCK_LLM: '1', LLM_MODEL: 'test-model' });
+    expect(llm.modelName).toBe('test-model');
   });
 
   it('does not treat an empty/unset MOCK_LLM as mock', () => {

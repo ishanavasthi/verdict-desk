@@ -2,7 +2,9 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "$comment": "incremental:false — nest's deleteOutDir wipes dist/ but not the external .tsbuildinfo, so an incremental build would skip re-emitting unchanged files (e.g. src/prisma) and produce a broken dist. Full emit every build is correct and fast enough here.",
+    "incremental": false
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "test", "scripts", "prisma", "**/*.spec.ts", "**/*.test.ts"]

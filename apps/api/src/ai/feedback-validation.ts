@@ -16,10 +16,14 @@
  */
 import { z } from 'zod';
 
-export const MAX_SUMMARY_CHARS = 1000;
-export const MAX_SUGGESTION_TITLE_CHARS = 200;
-export const MAX_SUGGESTION_DETAIL_CHARS = 1000;
-export const MAX_SUGGESTIONS = 8;
+// Deliberately tight so feedback stays terse and scales to the problem: a
+// one-line summary, at most a few short suggestions. The prompt asks for output
+// well under these; they are the hard ceiling (a verbose response gets one
+// corrective retry, then FLAGGED — never persisted as an over-long wall of text).
+export const MAX_SUMMARY_CHARS = 400;
+export const MAX_SUGGESTION_TITLE_CHARS = 120;
+export const MAX_SUGGESTION_DETAIL_CHARS = 300;
+export const MAX_SUGGESTIONS = 3;
 
 export const feedbackSeveritySchema = z.enum(['info', 'low', 'medium', 'high']);
 

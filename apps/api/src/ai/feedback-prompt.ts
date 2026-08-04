@@ -16,6 +16,13 @@
  * produced (see feedback-validation.ts).
  */
 
+import {
+  MAX_SUGGESTIONS,
+  MAX_SUGGESTION_DETAIL_CHARS,
+  MAX_SUGGESTION_TITLE_CHARS,
+  MAX_SUMMARY_CHARS,
+} from './feedback-validation';
+
 export const MAX_CODE_CHARS = 8 * 1024; // 8KB
 export const MAX_STDOUT_CHARS = 8 * 1024; // 8KB
 export const MAX_STDERR_CHARS = 8 * 1024; // 8KB
@@ -119,12 +126,26 @@ export function buildFeedbackPrompt(input: FeedbackPromptInput): string {
   }
 
   sections.push(
+    'BE BRIEF and PROPORTIONATE to the problem. Match the depth of feedback to how hard the problem is: a ' +
+      'simple exercise (e.g. read two integers and print their sum) warrants a one-line summary and usually 0-1 ' +
+      'suggestions, not a checklist. Rules:\n' +
+      '- "summary": ONE short sentence on the overall quality. No preamble.\n' +
+      '- "suggestions": ONLY genuinely worthwhile, specific improvements for THIS code — at most ' +
+      `${MAX_SUGGESTIONS}, and fewer (even zero) when the solution is already fine. Each "detail" is ONE short ` +
+      'sentence.\n' +
+      '- Do NOT pad with generic boilerplate ("add error handling", "validate input", "use descriptive names", ' +
+      '"break into functions") unless it is materially relevant to this specific problem and solution. If the ' +
+      'code is clean and correct for the task, say so briefly and return few or no suggestions.',
+  );
+
+  sections.push(
     'Respond with ONLY a single JSON object — no markdown fence, no prose before or after — matching ' +
       'EXACTLY this shape and nothing else:\n' +
       '{\n' +
-      '  "summary": string (1-1000 chars),\n' +
+      `  "summary": string (1-${MAX_SUMMARY_CHARS} chars, one sentence),\n` +
       '  "severity": "info" | "low" | "medium" | "high",\n' +
-      '  "suggestions": array of 0-8 objects, each exactly {"title": string (1-200 chars), "detail": string (1-1000 chars)}\n' +
+      `  "suggestions": array of 0-${MAX_SUGGESTIONS} objects, each exactly {"title": string ` +
+      `(1-${MAX_SUGGESTION_TITLE_CHARS} chars), "detail": string (1-${MAX_SUGGESTION_DETAIL_CHARS} chars, one sentence)}\n` +
       '}\n' +
       'Do not add any keys other than summary, severity, suggestions at the top level, or title/detail ' +
       'inside a suggestion. Base "severity" ONLY on genuine code-quality concerns you observe in the ' +

@@ -214,7 +214,16 @@ DB, every legal one allowed) plus state-machine unit tests — see [Testing](#te
   harness's own result stream stays intact for the other cases, (2) the submission child reports `uid=65534` while
   a same-argv probe confirms PID 1 is `uid=0`, (3) a normal correct solution still grades `PASS` through the
   identical path, (4) two of the destructive-payload classes above (`/work` write, outbound network) are
-  re-verified still contained at the Docker level.
+  re-verified still contained at the Docker level. **This script runs in CI** (`sandbox-uid-separation` job), so
+  the guarantee is enforced on every push rather than resting on someone remembering to run it.
+  **Fail-closed, not fail-quiet.** The separation only holds while the harness starts as root, and the harness can
+  only *observe* its own uid — it cannot know it was *meant* to be root. So `docker-args.ts` states the
+  requirement explicitly with `-e VERDICT_REQUIRE_UID_DROP=1`, and `harness.js` **refuses to grade at all**
+  (`{fatal:true}` -> submission `ERROR`) if that flag is set but it cannot drop privileges. Without this, a
+  container that started non-root for any reason the argv doesn't control — a base image adding `USER`, a
+  daemon-level default, uid remapping — would silently run submissions at the harness's own uid and reopen this
+  gap with every test still passing. A security property that can degrade silently is not a property; the refusal
+  is covered by a Docker-free unit test (`harness-runtime.spec.ts`).
 - **Hidden test-case *inputs* (not expected outputs) are readable** from the mounted `manifest.json` in the
   one-container-per-submission model — an accepted latency/confidentiality trade-off; the confidentiality that
   matters (expected outputs) is preserved.

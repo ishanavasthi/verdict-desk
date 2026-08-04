@@ -44,6 +44,42 @@ jobs:
       - name: Test
         run: pnpm test
 
+  # Enforces the sandbox's uid-separation guarantee (the /proc/1/fd/1 residual
+  # documented as CLOSED in the README threat model) on every push, instead of
+  # relying on someone remembering to run the script. Needs real Docker — which
+  # ubuntu-latest runners provide — but no database and no build: the script
+  # drives `docker run` directly using the same buildDockerRunArgs + harness.js
+  # that production uses. Cheap insurance for the project's most security-
+  # sensitive property; if it ever fails, the sandbox is weaker than the README
+  # claims and that must block the merge.
+  sandbox-uid-separation:
+    needs: build-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Create .env
+        run: cp .env.example .env
+
+      - name: Pre-pull sandbox image
+        run: docker pull node:20-alpine
+
+      - name: Verify harness/submission uid separation
+        run: bash scripts/verify-uid-separation.sh
+
   browser-smoke:
     needs: build-test
     runs-on: ubuntu-latest

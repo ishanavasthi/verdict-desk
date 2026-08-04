@@ -57,6 +57,17 @@ describe('buildDockerRunArgs (sandbox hardening flags)', () => {
     expect(args.filter((a) => a === '--cap-add')).toHaveLength(3);
   });
 
+  it('declares uid separation MANDATORY to the harness via VERDICT_REQUIRE_UID_DROP=1', () => {
+    // The harness cannot verify on its own that it was *meant* to run as root
+    // (it can only observe its own uid), so this argv states the requirement
+    // explicitly. With it set, harness.js fails closed — refusing to grade —
+    // instead of silently running the submission at its own uid if the
+    // container ever starts non-root. See harness.js REQUIRE_UID_DROP.
+    const envIdx = args.indexOf('VERDICT_REQUIRE_UID_DROP=1');
+    expect(envIdx).toBeGreaterThanOrEqual(0);
+    expect(args[envIdx - 1]).toBe('-e');
+  });
+
   it('includes the standalone --read-only flag', () => {
     expect(args).toContain('--read-only');
   });

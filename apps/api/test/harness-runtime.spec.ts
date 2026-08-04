@@ -12,11 +12,14 @@ const HARNESS_PATH = path.join(__dirname, '..', 'src', 'sandbox', 'harness', 'ha
  * us regression-test harness runtime BEHAVIOR (not just syntax) without
  * Docker, per the "CI runs `pnpm test` with NO Docker" constraint.
  */
-function runHarness(workDir: string): Promise<{ stdout: string; exitCode: number | null }> {
+function runHarness(
+  workDir: string,
+  extraEnv: Record<string, string> = {},
+): Promise<{ stdout: string; exitCode: number | null }> {
   return new Promise((resolve, reject) => {
     const child = spawn('node', [HARNESS_PATH], {
       cwd: workDir,
-      env: { ...process.env, HARNESS_WORK_DIR: workDir },
+      env: { ...process.env, HARNESS_WORK_DIR: workDir, ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -126,6 +129,52 @@ describe('harness.js runtime behavior (no Docker — real child_process, real pi
       const parsed = JSON.parse(stdout);
       expect(parsed.fatal).toBe(true);
       expect(typeof parsed.message).toBe('string');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  /**
+   * The fail-closed guarantee for the /proc/1/fd/1 hardening. The uid
+   * separation only holds if the harness starts as root and can drop the
+   * submission to 65534; when it cannot, it must REFUSE to grade rather than
+   * silently run the submission at its own uid (which would reopen the
+   * self-injection gap while leaving every other test green). docker-args.ts
+   * sets VERDICT_REQUIRE_UID_DROP=1 on the real sandbox path; this test
+   * asserts the refusal by running the harness unprivileged on the host with
+   * that flag set. Without the flag (every other test here) the lenient
+   * host-test path is preserved.
+   */
+  it('FAIL-CLOSED: refuses to grade when VERDICT_REQUIRE_UID_DROP=1 but it cannot drop privileges', async () => {
+    if (typeof process.getuid === 'function' && process.getuid() === 0) {
+      // Running as root (e.g. some container CI images): the harness CAN drop
+      // privileges here, so the refusal path is legitimately unreachable.
+      return;
+    }
+    const dir = makeWorkDir();
+    try {
+      fs.writeFileSync(path.join(dir, 'main.js'), `process.stdout.write('should never run');`);
+      fs.writeFileSync(
+        path.join(dir, 'manifest.json'),
+        JSON.stringify({
+          submissionId: 'sub-uid-guard',
+          perCaseTimeoutMs: 3000,
+          maxCaseStdoutBytes: 1024,
+          maxCaseStderrBytes: 1024,
+          cases: [{ id: 'c1', input: '' }],
+        }),
+      );
+
+      const { stdout, exitCode } = await runHarness(dir, { VERDICT_REQUIRE_UID_DROP: '1' });
+
+      expect(exitCode).toBe(1);
+      const parsed = JSON.parse(stdout);
+      expect(parsed.fatal).toBe(true);
+      expect(parsed.message).toMatch(/refusing to grade/i);
+      // Critically: it refused BEFORE running any case — no verdicts were
+      // produced from a sandbox weaker than the threat model claims.
+      expect(parsed.results).toBeUndefined();
+      expect(stdout).not.toContain('should never run');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

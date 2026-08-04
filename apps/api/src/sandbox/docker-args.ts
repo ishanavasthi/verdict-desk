@@ -50,6 +50,20 @@ export function buildDockerRunArgs(opts: DockerRunOptions): string[] {
     'KILL',
     '--security-opt',
     'no-new-privileges',
+    // Fail-closed contract with harness.js. The uid separation that closes the
+    // /proc/1/fd/1 gap depends on the harness starting as root so it CAN drop
+    // the submission to 65534 — a property this argv establishes (by omitting
+    // `--user`) but which the harness cannot itself guarantee. Without this
+    // flag the harness can only *infer* intent from its own uid, so a container
+    // that started non-root for ANY reason (a base image adding `USER`, a
+    // daemon default, uid remapping) would silently run submissions at the
+    // harness's own uid — reopening the gap with every test still green.
+    // Setting this says "uid separation is REQUIRED here": the harness refuses
+    // to grade at all if it cannot drop privileges, turning a silent security
+    // downgrade into a loud, visible failure. Host-only harness tests don't set
+    // it, so they keep the lenient path.
+    '-e',
+    'VERDICT_REQUIRE_UID_DROP=1',
     '-v',
     `${opts.hostTmpDir}:/work:ro`,
     '-w',

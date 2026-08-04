@@ -74,6 +74,22 @@ const CLOSE_GRACE_MS = 75;
 const FAST_PATH_BYTES = 8 * 1024 * 1024; // 8 MiB
 
 function main() {
+  // Refuse to grade at all if uid separation was declared mandatory but this
+  // process cannot perform it — see REQUIRE_UID_DROP above. Reported through
+  // the existing `fatal` channel, so grading.service.ts surfaces it as an
+  // infra error (submission -> ERROR) instead of producing verdicts from a
+  // sandbox that is quietly weaker than the threat model claims.
+  if (REQUIRE_UID_DROP && !CAN_DROP_PRIVS) {
+    const actualUid = typeof process.getuid === 'function' ? process.getuid() : 'unknown';
+    writeFatalAndExit(
+      'refusing to grade: VERDICT_REQUIRE_UID_DROP=1 demands the submission run at a uid distinct ' +
+        'from the harness, but the harness is not root (uid=' +
+        actualUid +
+        ') and cannot drop privileges — see docker-args.ts and the README threat model',
+    );
+    return;
+  }
+
   let manifest;
   try {
     const raw = fs.readFileSync(MANIFEST_PATH, 'utf8');
@@ -208,11 +224,19 @@ function makeCappedCollector(capBytes, onExceeded) {
 // test/harness-runtime.spec.ts, which runs this exact file as a plain
 // process on the HOST (no Docker, no root) to regression-test I/O behavior
 // without Docker — passing uid/gid there would throw EPERM before the child
-// even starts, since an unprivileged host user cannot setuid() at all. That
-// harness is unprivileged either way, so skipping the drop there does not
-// reopen the /proc/1/fd/1 gap (which only exists when the harness itself is
-// root); it is purely a host-test accommodation.
+// even starts, since an unprivileged host user cannot setuid() at all.
 const CAN_DROP_PRIVS = typeof process.getuid === 'function' && process.getuid() === 0;
+
+// FAIL-CLOSED SWITCH. Set only by docker-args.ts, i.e. only on the real
+// sandbox path. Deciding whether to drop privileges from `getuid() === 0`
+// alone is a SILENT contract: if the container ever started non-root by some
+// route other than the (unit-tested) absence of `--user` — a base image
+// adding `USER`, a daemon-level default, uid remapping — the harness would
+// quietly skip the drop, run the submission at its own uid, and reopen the
+// /proc/1/fd/1 self-injection gap while every existing test still passed.
+// A security property must never degrade quietly, so when the caller declares
+// the drop mandatory we refuse to grade rather than grade less safely.
+const REQUIRE_UID_DROP = process.env.VERDICT_REQUIRE_UID_DROP === '1';
 
 /** Kill the child's whole process group (it was spawned `detached: true`). */
 function killGroup(child, sig) {

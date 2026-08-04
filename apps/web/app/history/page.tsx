@@ -1,10 +1,15 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getAuthToken } from '@/lib/auth';
-import { getSubmissionHistory, type SubmissionSummary } from '@/lib/api';
+import { getSubmissionHistory, type QuestionKind, type SubmissionSummary } from '@/lib/api';
 import { statusOutcome, submissionStatusLabel } from '@/lib/status';
 import StatusBadge from '@/components/StatusBadge';
+import { Badge } from '@/components/ui/badge';
 import PageShell from '@/components/PageShell';
+
+function kindLabel(kind: QuestionKind): string {
+  return kind === 'INTEGER' ? 'INT' : kind;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +46,9 @@ export default async function HistoryPage() {
                 <StatusBadge outcome={statusOutcome(submission.status)} dot>
                   {submissionStatusLabel(submission.status)}
                 </StatusBadge>
+                <Badge variant="outline" className="font-mono text-[0.65rem] uppercase tracking-wider text-muted-foreground">
+                  {kindLabel(submission.problemKind)}
+                </Badge>
                 <span className="font-mono text-sm font-medium tabular-nums">
                   {submission.score !== null ? `${submission.score}%` : '—'}
                 </span>

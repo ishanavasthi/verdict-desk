@@ -5,6 +5,7 @@ import { useMediaQuery } from '@/lib/use-media-query';
 import type { ProblemDetail } from '@/lib/api';
 import ProblemPanel from './ProblemPanel';
 import SubmitEditor from './SubmitEditor';
+import AnswerEditor from './AnswerEditor';
 
 /**
  * The LeetCode-style split workspace. On desktop it's a draggable two-pane
@@ -22,7 +23,11 @@ export default function ProblemWorkspace({ problem }: { problem: ProblemDetail }
   );
   const editorPane = (
     <div className="h-full rounded-xl border border-border bg-card">
-      <SubmitEditor problemId={problem.id} problemTitle={problem.title} />
+      {problem.kind === 'CODE' ? (
+        <SubmitEditor problemId={problem.id} problemTitle={problem.title} />
+      ) : (
+        <AnswerEditor problemId={problem.id} kind={problem.kind} options={problem.options} />
+      )}
     </div>
   );
 

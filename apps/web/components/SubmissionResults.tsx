@@ -29,12 +29,19 @@ export default function SubmissionResults({
     <div className="flex flex-col gap-4 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <VerdictStamp status={submission.status} score={submission.score} outcome={statusOutcome(submission.status)} />
-        <span className="font-mono text-xs text-muted-foreground">
-          {submission.results.length} case{submission.results.length === 1 ? '' : 's'}
-        </span>
+        {submission.problemKind === 'CODE' && (
+          <span className="font-mono text-xs text-muted-foreground">
+            {submission.results.length} case{submission.results.length === 1 ? '' : 's'}
+          </span>
+        )}
       </div>
 
-      {submission.results.length === 0 ? (
+      {submission.problemKind !== 'CODE' ? (
+        <div className="rounded-lg border border-border bg-card/60 px-3.5 py-3">
+          <span className="eyebrow mb-1.5 block">Your answer</span>
+          <p className="plain-text font-mono text-sm text-foreground/90">{submission.submittedAnswer}</p>
+        </div>
+      ) : submission.results.length === 0 ? (
         <p className="text-sm text-muted-foreground">No test results yet.</p>
       ) : (
         <ul className="flex flex-col gap-1.5">

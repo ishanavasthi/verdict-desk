@@ -5,6 +5,7 @@ export interface ProblemSummary {
   id: string;
   title: string;
   difficulty: string | null;
+  kind: string;
 }
 
 export interface SampleTestCase {
@@ -12,11 +13,18 @@ export interface SampleTestCase {
   expectedOutput: string;
 }
 
+export interface McqOption {
+  id: string;
+  text: string;
+}
+
 export interface ProblemDetail {
   id: string;
   title: string;
   description: string;
   difficulty: string | null;
+  kind: string;
+  options: McqOption[] | null;
   sampleTestCases: SampleTestCase[];
 }
 
@@ -28,14 +36,16 @@ export class ProblemsController {
   async list(): Promise<ProblemSummary[]> {
     const problems = await this.prisma.problem.findMany({
       orderBy: { createdAt: 'asc' },
-      select: { id: true, title: true, difficulty: true },
+      select: { id: true, title: true, difficulty: true, kind: true },
     });
     return problems;
   }
 
   /**
    * PUBLIC. `sampleTestCases` is ONLY the non-hidden test cases — hidden
-   * cases' input/expectedOutput must never be exposed here.
+   * cases' input/expectedOutput must never be exposed here. `answerKey` is a
+   * server-side secret (same status as hidden expected outputs) and is NEVER
+   * selected. `options` is returned as-is for MCQ, null otherwise.
    */
   @Get(':id')
   async detail(@Param('id') id: string): Promise<ProblemDetail> {
@@ -46,6 +56,8 @@ export class ProblemsController {
         title: true,
         description: true,
         difficulty: true,
+        kind: true,
+        options: true,
         testCases: {
           where: { hidden: false },
           orderBy: { ordering: 'asc' },
@@ -62,6 +74,8 @@ export class ProblemsController {
       title: problem.title,
       description: problem.description,
       difficulty: problem.difficulty,
+      kind: problem.kind,
+      options: problem.kind === 'MCQ' ? (problem.options as unknown as McqOption[]) : null,
       sampleTestCases: problem.testCases,
     };
   }

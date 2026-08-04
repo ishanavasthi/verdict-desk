@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Controller,
   Body,
@@ -25,6 +26,7 @@ import { SubmissionQueueService } from './submission-queue.service';
 import { CreateSubmissionDto } from './dto/create-submission.dto';
 import { ListSubmissionsQueryDto } from './dto/list-submissions.dto';
 import { RawTestResultRow, RedactedTestResultView, redactResults } from './redact-results';
+import { McqOption, gradeObjective, validateObjectiveAnswer } from './objective-grading';
 
 export interface CreateSubmissionResponse {
   id: string;
@@ -66,18 +68,26 @@ export interface SubmissionView {
   results: RedactedTestResultView[];
   feedbackStatus: FeedbackGenerationStatus;
   feedback: SubmissionFeedbackView | null;
+  problemKind: string;
+  submittedAnswer: string | null;
 }
 
 /**
- * Derive the feedback generation state from the submission status and the
- * (optional) persisted feedback row. Mirrors grading.service.ts, which only
- * fires feedback generation for PASSED/FAILED submissions — an ERRORed
- * submission never gets a row, so it is SKIPPED rather than perpetually PENDING.
+ * Derive the feedback generation state from the submission status, problem
+ * kind, and the (optional) persisted feedback row. Mirrors grading.service.ts,
+ * which only fires feedback generation for PASSED/FAILED CODE submissions —
+ * an ERRORed submission never gets a row (SKIPPED rather than perpetually
+ * PENDING), and non-CODE kinds never get one either (they never touch the AI
+ * feedback pipeline at all).
  */
 export function computeFeedbackStatus(
   submissionStatus: string,
   feedback: { validationStatus: string } | null,
+  problemKind: string,
 ): FeedbackGenerationStatus {
+  if (problemKind !== 'CODE') {
+    return 'SKIPPED';
+  }
   if (feedback) {
     return feedback.validationStatus === 'VALID' ? 'READY' : 'FAILED';
   }
@@ -93,6 +103,7 @@ export interface SubmissionHistoryItem {
   status: string;
   score: number | null;
   createdAt: Date;
+  problemKind: string;
 }
 
 @Controller('submissions')
@@ -116,6 +127,41 @@ export class SubmissionsController {
     @Body() dto: CreateSubmissionDto,
     @CurrentUser() user: RequestUser,
   ): Promise<CreateSubmissionResponse> {
+    // Load the problem's kind first: CODE keeps today's sandbox/queue path
+    // exactly as-is; MCQ/INTEGER are graded instantly, in-process, with no
+    // queue, no sandbox, no LLM. A nonexistent problemId falls through to
+    // the CODE path below and fails at submission.create() (FK violation),
+    // same as before this change.
+    const problem = await this.prisma.problem.findUnique({
+      where: { id: dto.problemId },
+      select: { kind: true, options: true, answerKey: true },
+    });
+
+    if (problem && problem.kind !== 'CODE') {
+      const kind = problem.kind as 'MCQ' | 'INTEGER';
+      const options = kind === 'MCQ' ? ((problem.options as unknown as McqOption[]) ?? []) : null;
+      const validation = validateObjectiveAnswer(kind, dto.code, options);
+      if (!validation.ok) {
+        // Generic message — never reveals the correct answer or valid option ids.
+        throw new BadRequestException('invalid answer for this question');
+      }
+
+      const { status, score } = gradeObjective(kind, validation.normalized, problem.answerKey ?? '');
+
+      const submission = await this.prisma.submission.create({
+        data: {
+          problemId: dto.problemId,
+          userId: user.id,
+          code: dto.code,
+          language: dto.language ?? 'JS',
+          status,
+          score,
+        },
+      });
+
+      return { id: submission.id, status: submission.status };
+    }
+
     // Backpressure: reject (503) when the grading backlog is full, BEFORE
     // creating a row — so we never leave an ungradeable QUEUED submission.
     if (!this.queue.canAccept()) {
@@ -143,14 +189,23 @@ export class SubmissionsController {
     @CurrentUser() user: RequestUser,
     @Query() query: ListSubmissionsQueryDto,
   ): Promise<SubmissionHistoryItem[]> {
-    return this.prisma.submission.findMany({
+    const submissions = await this.prisma.submission.findMany({
       where: {
         userId: user.id,
         ...(query.problemId ? { problemId: query.problemId } : {}),
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, problemId: true, status: true, score: true, createdAt: true },
+      select: {
+        id: true,
+        problemId: true,
+        status: true,
+        score: true,
+        createdAt: true,
+        problem: { select: { kind: true } },
+      },
     });
+
+    return submissions.map(({ problem, ...rest }) => ({ ...rest, problemKind: problem.kind }));
   }
 
   @Get(':id')
@@ -167,6 +222,7 @@ export class SubmissionsController {
       include: {
         testResults: { include: { testCase: { select: { hidden: true } } } },
         aiFeedback: true,
+        problem: { select: { kind: true } },
       },
     });
     if (!submission) {
@@ -188,7 +244,7 @@ export class SubmissionsController {
       status: submission.status,
       score: submission.score,
       results: redactResults(rawResults, hiddenByTestCaseId),
-      feedbackStatus: computeFeedbackStatus(submission.status, submission.aiFeedback),
+      feedbackStatus: computeFeedbackStatus(submission.status, submission.aiFeedback, submission.problem.kind),
       feedback: submission.aiFeedback
         ? {
             status: submission.aiFeedback.validationStatus as 'VALID' | 'FLAGGED',
@@ -197,6 +253,8 @@ export class SubmissionsController {
             content: submission.aiFeedback.content,
           }
         : null,
+      problemKind: submission.problem.kind,
+      submittedAnswer: submission.problem.kind !== 'CODE' ? submission.code : null,
     };
   }
 
@@ -222,7 +280,10 @@ export class SubmissionsController {
       throw new NotFoundException(`submission ${id} not found`);
     }
 
-    if (computeFeedbackStatus(submission.status, submission.aiFeedback) !== 'FAILED') {
+    // Feedback regeneration is only ever relevant for CODE submissions (only
+    // CODE gets an aiFeedback row in the first place); 'CODE' is passed
+    // explicitly since this query doesn't need the problem's kind otherwise.
+    if (computeFeedbackStatus(submission.status, submission.aiFeedback, 'CODE') !== 'FAILED') {
       throw new ConflictException('feedback can only be regenerated when generation has failed');
     }
 

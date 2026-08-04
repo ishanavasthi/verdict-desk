@@ -20,11 +20,15 @@ export default function FeedbackCard({
   feedback,
   onRefresh,
   refreshing = false,
+  onRegenerate,
+  regenerating = false,
 }: {
   feedbackStatus: FeedbackGenerationStatus;
   feedback: SubmissionFeedback | null;
   onRefresh?: () => void;
   refreshing?: boolean;
+  onRegenerate?: () => void;
+  regenerating?: boolean;
 }) {
   if (feedbackStatus === 'SKIPPED') return null;
 
@@ -44,6 +48,17 @@ export default function FeedbackCard({
             disabled={refreshing}
           >
             {refreshing ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        )}
+        {feedbackStatus === 'FAILED' && onRegenerate && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-7 px-2 text-xs text-muted-foreground"
+            onClick={onRegenerate}
+            disabled={regenerating}
+          >
+            {regenerating ? 'Regenerating…' : 'Regenerate'}
           </Button>
         )}
       </div>

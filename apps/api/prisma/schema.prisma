@@ -168,6 +168,7 @@ model Answer {
   state         AnswerState @default(DRAFT)
   content       String      @db.Text
   editedContent String?     @db.Text
+  reviewNote    String?     @db.Text
   reviewedById  String?     @db.Uuid
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt

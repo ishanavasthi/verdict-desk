@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getAuthToken, getMe } from '@/lib/auth';
 import { ApiError, getDoubt, type Doubt } from '@/lib/api';
-import AnswerCard from '@/components/AnswerCard';
+import LiveDoubtView from '@/components/LiveDoubtView';
 import PageShell from '@/components/PageShell';
 import { Button } from '@/components/ui/button';
 
@@ -69,20 +69,7 @@ export default async function DoubtDetailPage({ params }: { params: Promise<{ id
               </Link>
             )}
 
-            <p className="eyebrow mb-3 mt-6">Answers</p>
-            {doubt.answers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No answers yet.</p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {doubt.answers.map((answer) => (
-                  <AnswerCard
-                    key={answer.id}
-                    answer={answer}
-                    hidePendingContent={isOwn && answer.authorType === 'AI' && answer.state === 'PENDING_REVIEW'}
-                  />
-                ))}
-              </ul>
-            )}
+            <LiveDoubtView doubt={doubt} isOwn={isOwn} />
           </>
         )}
       </div>

@@ -160,6 +160,8 @@ export interface Answer {
   state: AnswerState;
   content: string;
   editedContent: string | null;
+  /** Teacher's reject reason — only ever non-null on REJECTED answers, which the API only returns to the doubt author and teachers. Untrusted free text: render plain. */
+  reviewNote: string | null;
   createdAt: string;
 }
 

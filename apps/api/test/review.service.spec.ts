@@ -86,7 +86,7 @@ describe('ReviewService — guarded CAS + 409 mapping', () => {
     await expect(service.approve('answer-1', 'teacher-1')).rejects.not.toBeInstanceOf(ConflictException);
   });
 
-  it('reject(): CAS success sets state=REJECTED + reviewedById and writes a reject audit row', async () => {
+  it('reject(): CAS success sets state=REJECTED + reviewedById + sanitized reviewNote and writes a reject audit row', async () => {
     const prisma = fakePrisma();
     const service = new ReviewService(prisma as any);
 
@@ -94,11 +94,38 @@ describe('ReviewService — guarded CAS + 409 mapping', () => {
 
     expect(prisma.answer.updateMany).toHaveBeenCalledWith({
       where: { id: 'answer-2', state: 'PENDING_REVIEW' },
-      data: { state: 'REJECTED', reviewedById: 'teacher-1' },
+      data: { state: 'REJECTED', reviewedById: 'teacher-1', reviewNote: 'incorrect approach' },
     });
     expect(prisma.reviewAudit.create).toHaveBeenCalledWith({
       data: { answerId: 'answer-2', action: 'reject', fromState: 'PENDING_REVIEW', toState: 'REJECTED', actorId: 'teacher-1' },
     });
+  });
+
+  it('reject(): sanitizes control characters out of the reason before persisting as reviewNote', async () => {
+    const prisma = fakePrisma();
+    const service = new ReviewService(prisma as any);
+    const withEscape = 'bad ' + String.fromCharCode(0x1b) + '[31mformatting';
+
+    await service.reject('answer-2', 'teacher-1', withEscape);
+
+    expect(prisma.answer.updateMany).toHaveBeenCalledWith({
+      where: { id: 'answer-2', state: 'PENDING_REVIEW' },
+      data: { state: 'REJECTED', reviewedById: 'teacher-1', reviewNote: 'bad [31mformatting' },
+    });
+  });
+
+  it('reject(): reason undefined -> no reviewNote key in the CAS write', async () => {
+    const prisma = fakePrisma();
+    const service = new ReviewService(prisma as any);
+
+    await service.reject('answer-2', 'teacher-1');
+
+    expect(prisma.answer.updateMany).toHaveBeenCalledWith({
+      where: { id: 'answer-2', state: 'PENDING_REVIEW' },
+      data: { state: 'REJECTED', reviewedById: 'teacher-1' },
+    });
+    const call = (prisma.answer.updateMany as jest.Mock).mock.calls[0][0];
+    expect(call.data).not.toHaveProperty('reviewNote');
   });
 
   it('reject(): affected-count 0 -> 409', async () => {

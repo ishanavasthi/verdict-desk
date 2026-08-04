@@ -3,12 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import SubmissionResults from './SubmissionResults';
+import { usePolling } from '../lib/use-polling';
 import type { SubmissionDetail } from '../lib/api';
-
-// The live model (z-ai/glm-5.2) can take ~1–2 min; poll on a relaxed cadence
-// for up to ~2.5 min before giving up and leaving the manual Refresh button.
-const FEEDBACK_POLL_INTERVAL_MS = 2500;
-const MAX_FEEDBACK_POLL_ATTEMPTS = 60; // 60 × 2.5s = 150s
 
 /**
  * Wraps a graded submission and keeps its AI feedback fresh without a manual
@@ -26,23 +22,14 @@ export default function LiveSubmissionView({ initial }: { initial: SubmissionDet
   const router = useRouter();
   const [submission, setSubmission] = useState<SubmissionDetail>(initial);
   const [refreshing, setRefreshing] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const attemptsRef = useRef(0);
   const mountedRef = useRef(true);
-
-  // Re-seed if the parent hands us a different submission (e.g. the editor
-  // grades a second submission) — reset the poll budget with it.
-  useEffect(() => {
-    setSubmission(initial);
-    attemptsRef.current = 0;
-  }, [initial]);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (timer.current) clearTimeout(timer.current);
     };
   }, []);
 
@@ -67,29 +54,59 @@ export default function LiveSubmissionView({ initial }: { initial: SubmissionDet
 
   // Auto-poll while feedback is PENDING, capped. Cleared on unmount or once the
   // feedback reaches a terminal state (READY/FAILED/SKIPPED).
+  const { restart } = usePolling({
+    enabled: submission.feedbackStatus === 'PENDING',
+    onTick: async () => {
+      const status = await fetchOnce();
+      return status === 'PENDING' ? 'continue' : 'stop';
+    },
+  });
+
+  // Re-seed if the parent hands us a different submission (e.g. the editor
+  // grades a second submission) — reset the poll budget with it.
   useEffect(() => {
-    if (submission.feedbackStatus !== 'PENDING') return;
-    if (attemptsRef.current >= MAX_FEEDBACK_POLL_ATTEMPTS) return;
-
-    timer.current = setTimeout(async () => {
-      attemptsRef.current += 1;
-      await fetchOnce();
-    }, FEEDBACK_POLL_INTERVAL_MS);
-
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [submission, fetchOnce]);
+    setSubmission(initial);
+    restart();
+  }, [initial, restart]);
 
   const refresh = useCallback(async () => {
     if (refreshing) return;
     setRefreshing(true);
-    attemptsRef.current = 0; // a manual refresh re-opens the auto-poll budget
+    restart(); // a manual refresh re-opens the auto-poll budget
     await fetchOnce();
     if (mountedRef.current) setRefreshing(false);
-  }, [refreshing, fetchOnce]);
+  }, [refreshing, fetchOnce, restart]);
+
+  // FAILED feedback is terminal server-side until regenerated: POST the
+  // regenerate endpoint (deletes the flagged row and re-fires generation),
+  // then re-fetch — the submission comes back PENDING, which re-arms the poll.
+  const regenerate = useCallback(async () => {
+    if (regenerating) return;
+    setRegenerating(true);
+    try {
+      const res = await fetch(`/api/submissions/${submission.id}/feedback/regenerate`, { method: 'POST' });
+      if (res.status === 401) {
+        router.push('/login');
+        return;
+      }
+      if (res.ok) {
+        restart(); // fresh poll budget for the new generation cycle
+        await fetchOnce();
+      }
+    } catch {
+      // network hiccup: the card stays FAILED and the button remains usable
+    } finally {
+      if (mountedRef.current) setRegenerating(false);
+    }
+  }, [regenerating, submission.id, router, restart, fetchOnce]);
 
   return (
-    <SubmissionResults submission={submission} onRefreshFeedback={refresh} refreshingFeedback={refreshing} />
+    <SubmissionResults
+      submission={submission}
+      onRefreshFeedback={refresh}
+      refreshingFeedback={refreshing}
+      onRegenerateFeedback={regenerate}
+      regeneratingFeedback={regenerating}
+    />
   );
 }

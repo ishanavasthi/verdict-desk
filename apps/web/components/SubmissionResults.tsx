@@ -9,17 +9,21 @@ import FeedbackCard from './FeedbackCard';
  * cases redacted server-side), and the AI feedback card. Pure presentational
  * — works from Server or Client trees.
  *
- * `onRefreshFeedback`/`refreshingFeedback` come only from client callers that
- * can re-fetch (LiveSubmissionView); server renders omit them.
+ * `onRefreshFeedback`/`refreshingFeedback` (and the regenerate pair) come only
+ * from client callers that can re-fetch (LiveSubmissionView); server renders omit them.
  */
 export default function SubmissionResults({
   submission,
   onRefreshFeedback,
   refreshingFeedback,
+  onRegenerateFeedback,
+  regeneratingFeedback,
 }: {
   submission: SubmissionDetail;
   onRefreshFeedback?: () => void;
   refreshingFeedback?: boolean;
+  onRegenerateFeedback?: () => void;
+  regeneratingFeedback?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -77,6 +81,8 @@ export default function SubmissionResults({
         feedback={submission.feedback}
         onRefresh={onRefreshFeedback}
         refreshing={refreshingFeedback}
+        onRegenerate={onRegenerateFeedback}
+        regenerating={regeneratingFeedback}
       />
     </div>
   );

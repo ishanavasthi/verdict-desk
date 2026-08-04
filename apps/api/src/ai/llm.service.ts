@@ -62,6 +62,12 @@ export class LlmService {
     const client = new ChatOpenAI({
       apiKey: this.apiKey,
       model: this.model,
+      // Bound the call so a misconfigured (nonexistent) or congested model can
+      // never hang the AI-feedback pipeline indefinitely — the failure mode that
+      // made feedback silently "never show up". On timeout/refusal the request
+      // rejects and the caller records the error instead of waiting forever.
+      timeout: 45_000,
+      maxRetries: 1,
       configuration: {
         baseURL: this.baseURL,
         // The openai SDK's Node shim defaults to the `node-fetch` package.

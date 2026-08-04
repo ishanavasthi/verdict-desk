@@ -1,4 +1,4 @@
-import type { FeedbackSeverity, SubmissionStatus, TestResultStatus } from './api';
+import type { AnswerAuthorType, AnswerState, FeedbackSeverity, SubmissionStatus, TestResultStatus } from './api';
 
 const SUBMISSION_STATUS_LABEL: Record<SubmissionStatus, string> = {
   QUEUED: 'Queued',
@@ -42,4 +42,40 @@ const FEEDBACK_SEVERITY_LABEL: Record<FeedbackSeverity, string> = {
 
 export function feedbackSeverityLabel(severity: FeedbackSeverity): string {
   return FEEDBACK_SEVERITY_LABEL[severity] ?? severity;
+}
+
+const ANSWER_STATE_LABEL: Record<AnswerState, string> = {
+  DRAFT: 'Draft',
+  PENDING_REVIEW: 'Pending review',
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+};
+
+export function answerStateLabel(state: AnswerState): string {
+  return ANSWER_STATE_LABEL[state] ?? state;
+}
+
+/** Maps an answer's review state to a badge CSS class (see .badge-approved etc. in globals.css). */
+export function answerStateBadgeClass(state: AnswerState): string {
+  switch (state) {
+    case 'APPROVED':
+      return 'badge-approved';
+    case 'PENDING_REVIEW':
+      return 'badge-pending-review';
+    case 'REJECTED':
+      return 'badge-rejected';
+    case 'DRAFT':
+      return 'badge-draft';
+    default:
+      return 'badge-pending';
+  }
+}
+
+const ANSWER_AUTHOR_TYPE_LABEL: Record<AnswerAuthorType, string> = {
+  AI: '\u{1F916} AI',
+  TEACHER: '\u{1F464} Teacher',
+};
+
+export function answerAuthorTypeLabel(authorType: AnswerAuthorType): string {
+  return ANSWER_AUTHOR_TYPE_LABEL[authorType] ?? authorType;
 }

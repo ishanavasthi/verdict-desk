@@ -124,6 +124,71 @@ export interface CreateSubmissionResponse {
   status: SubmissionStatus;
 }
 
+// ---- Doubts / teacher review ----
+
+export type AnswerAuthorType = 'AI' | 'TEACHER';
+export type AnswerState = 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
+
+export interface DoubtAuthor {
+  email: string;
+  name: string | null;
+}
+
+/**
+ * A single answer to a doubt. `content` is the original (AI) draft;
+ * `editedContent` is set once a teacher has edited or approved-with-edits —
+ * always prefer `editedContent ?? content` when displaying an answer.
+ *
+ * `content`/`editedContent` are untrusted (AI- or teacher-authored student
+ * doubt content) — render as plain text only, never as HTML/markdown.
+ */
+export interface Answer {
+  id: string;
+  authorType: AnswerAuthorType;
+  state: AnswerState;
+  content: string;
+  editedContent: string | null;
+  createdAt: string;
+}
+
+/**
+ * A student-authored doubt (question). `title`/`body` are untrusted —
+ * render as plain text only.
+ *
+ * The API filters `answers` by viewer: students see APPROVED answers plus
+ * their own doubt's PENDING_REVIEW answers; teachers see everything.
+ */
+export interface Doubt {
+  id: string;
+  problemId: string | null;
+  title: string;
+  body: string;
+  createdAt: string;
+  author: DoubtAuthor | null;
+  answers: Answer[];
+}
+
+export interface CreateDoubtResponse {
+  id: string;
+}
+
+export interface ReviewQueueDoubtSummary {
+  id: string;
+  title: string;
+  body: string;
+  author: { email: string } | null;
+}
+
+/** A PENDING_REVIEW answer plus its parent doubt, as returned by the teacher review queue. */
+export interface ReviewQueueItem {
+  id: string;
+  content: string;
+  editedContent: string | null;
+  state: AnswerState;
+  createdAt: string;
+  doubt: ReviewQueueDoubtSummary;
+}
+
 /** Thrown by `apiFetch` for any non-2xx response; carries the HTTP status so callers can branch on it. */
 export class ApiError extends Error {
   readonly status: number;
@@ -189,4 +254,17 @@ export function getSubmission(id: string, cookie: string): Promise<SubmissionDet
 export function getSubmissionHistory(cookie: string, problemId?: string): Promise<SubmissionSummary[]> {
   const qs = problemId ? `?problemId=${encodeURIComponent(problemId)}` : '';
   return apiFetch<SubmissionSummary[]>(`/submissions${qs}`, { cookie });
+}
+
+export function getDoubts(cookie: string): Promise<Doubt[]> {
+  return apiFetch<Doubt[]>('/doubts', { cookie });
+}
+
+export function getDoubt(id: string, cookie: string): Promise<Doubt> {
+  return apiFetch<Doubt>(`/doubts/${id}`, { cookie });
+}
+
+/** TEACHER-only: PENDING_REVIEW answers awaiting approve/edit/reject. */
+export function getReviewQueue(cookie: string): Promise<ReviewQueueItem[]> {
+  return apiFetch<ReviewQueueItem[]>('/review/queue', { cookie });
 }

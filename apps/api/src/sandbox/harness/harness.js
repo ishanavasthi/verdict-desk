@@ -24,9 +24,15 @@
  *
  * Output contract: exactly ONE write to real stdout, after all cases finish:
  *   { submissionId, results: [...] }
- * main.js's own stdout/stderr are always piped (never inherited), so the
- * container's real stdout can never contain anything from untrusted code —
- * control channel and untrusted-data channel are structurally separate.
+ * main.js's stdout/stderr are always PIPED (never inherited) into per-case
+ * collectors, so in normal operation untrusted output does not reach the
+ * container's real stdout. This is NOT a hard security boundary, though: main.js
+ * runs as the SAME uid as this harness and tini, so it can in principle write to
+ * /proc/1/fd/1 and inject bytes into the container's real stdout. It still cannot
+ * forge a PASS — expected outputs are withheld from the container and comparison
+ * is host-side — so the worst it can do is corrupt/replace its OWN result blob,
+ * which the host then rejects (submission → ERROR). Fully closing this needs a
+ * distinct uid / hidepid; see the README threat model.
  */
 
 const { spawn } = require('child_process');
@@ -230,13 +236,15 @@ function runOneCase(id, input, timeoutMs, maxCaseStdoutBytes, maxCaseStderrBytes
 
     const killAll = (sig) => killGroup(child, sig);
 
-    const onCapExceeded = () => {
-      // Untrusted code may trap SIGTERM — go straight to SIGKILL.
-      killAll('SIGKILL');
-    };
-
-    const stdoutCollector = makeCappedCollector(maxCaseStdoutBytes, onCapExceeded);
-    const stderrCollector = makeCappedCollector(maxCaseStderrBytes, onCapExceeded);
+    // Soft caps only TRUNCATE (stop storing) — they do NOT kill. Killing on the
+    // soft cap made verdicts timing-dependent (a program right at the cap could
+    // land PASS or FAIL depending on scheduling) and wrongly failed correct
+    // programs that merely write verbose stderr. Memory stays bounded anyway:
+    // the collector discards bytes past the cap while still draining the pipe.
+    // Genuine runaway floods are stopped by the fast-path byte kill (below) and
+    // the per-case timeout.
+    const stdoutCollector = makeCappedCollector(maxCaseStdoutBytes);
+    const stderrCollector = makeCappedCollector(maxCaseStderrBytes);
 
     child.stdout.on('data', (chunk) => {
       stdoutCollector.push(chunk);
@@ -246,59 +254,77 @@ function runOneCase(id, input, timeoutMs, maxCaseStdoutBytes, maxCaseStderrBytes
       stderrCollector.push(chunk);
       if (stderrCollector.totalSeenBytes > FAST_PATH_BYTES) killAll('SIGKILL');
     });
-    // Streams are always piped, never inherited — untrusted output can NEVER
-    // reach the container's real stdout/stderr.
+    // Streams are piped (never inherited) into the collectors above. See the
+    // file header for why this is a functional, not a hard-security, boundary.
     child.stdout.on('error', () => {});
     child.stderr.on('error', () => {});
 
-    const timer = setTimeout(() => {
-      timedOut = true;
-      killAll('SIGKILL');
-    }, timeoutMs);
-
-    const settleResolve = (payload) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(payload);
-    };
-
-    child.on('error', (err) => {
-      // e.g. spawn failed after the fact (pid table full, EAGAIN, ...).
-      settleResolve({
-        id: id,
-        spawnError: true,
-        message: describeError(err),
-        stdout: stdoutCollector.text(),
-        stderr: stderrCollector.text(),
-        stdoutTruncated: stdoutCollector.truncated,
-        stderrTruncated: stderrCollector.truncated,
-        exitCode: null,
-        signal: null,
-        timedOut: timedOut,
-        timeMs: Date.now() - startedAt,
-      });
-    });
-
-    child.on('close', (exitCode, signal) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      // Fixed grace period: let tini reap any grandchildren before we return
-      // control to the sequential loop and it spawns the NEXT case.
-      setTimeout(() => {
-        resolve({
+    const collect = (extra) =>
+      Object.assign(
+        {
           id: id,
           spawnError: false,
           stdout: stdoutCollector.text(),
           stderr: stderrCollector.text(),
           stdoutTruncated: stdoutCollector.truncated,
           stderrTruncated: stderrCollector.truncated,
-          exitCode: exitCode === undefined ? null : exitCode,
-          signal: signal === undefined ? null : signal,
+          exitCode: null,
+          signal: null,
           timedOut: timedOut,
           timeMs: Date.now() - startedAt,
-        });
+        },
+        extra,
+      );
+
+    const finalize = (payload) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(hardTimer);
+      resolve(payload);
+    };
+
+    // Wall-clock timeout: SIGKILL the child's process group. Killing the DIRECT
+    // child makes its 'exit' fire, which settles the case — so the timeout is
+    // self-sufficient and never depends on the child cooperating.
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killAll('SIGKILL');
+    }, timeoutMs);
+
+    // Belt-and-suspenders: guarantee the case settles even if 'exit' is somehow
+    // delayed past the kill (never let one case wedge the whole submission).
+    const hardTimer = setTimeout(() => {
+      if (settled) return;
+      timedOut = true;
+      killAll('SIGKILL');
+      finalize(collect({ signal: 'SIGKILL' }));
+    }, timeoutMs + 500);
+
+    child.on('error', (err) => {
+      // e.g. spawn failed after the fact (pid table full, EAGAIN, ...).
+      finalize(collect({ spawnError: true, message: describeError(err) }));
+    });
+
+    // Resolve on the child process's OWN 'exit' (the direct child ending), NOT
+    // on stdio 'close'. A grandchild that main.js spawns detached with
+    // stdio:'inherit' holds main.js's stdout pipe open, so 'close' may NEVER
+    // fire — but 'exit' still does. This closes the queue-stall where such a
+    // grandchild wedged a case until the host wall-clock backstop.
+    child.on('exit', (exitCode, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(hardTimer);
+      // Grace: let final buffered stdout drain and tini reap grandchildren
+      // before the sequential loop spawns the NEXT case.
+      setTimeout(() => {
+        resolve(
+          collect({
+            exitCode: exitCode === undefined ? null : exitCode,
+            signal: signal === undefined ? null : signal,
+          }),
+        );
       }, CLOSE_GRACE_MS);
     });
 

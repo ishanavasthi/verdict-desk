@@ -287,6 +287,35 @@ fi
 log ""
 
 # ---------------------------------------------------------------------------
+# 7. Detached grandchild holding main.js's stdout pipe must NOT stall grading.
+#    Regression for the per-case-timeout-not-self-resolving bug: main.js spawns a
+#    detached grandchild (its OWN process group) with stdio:'inherit' — so it
+#    holds main.js's stdout pipe open — and then exits. Before the fix the harness
+#    waited on the child's stdio 'close' (which never fires while the pipe is
+#    held) and the case hung until the outer wall-clock. After the fix it resolves
+#    on the child's 'exit', fast.
+# ---------------------------------------------------------------------------
+
+log "-- case 7: detached grandchild does not stall the queue --"
+CODE_STALL="require('child_process').spawn(process.execPath,['-e','setInterval(()=>{},1e9)'],{detached:true,stdio:'inherit'});"
+t0=$SECONDS
+result=$(submit_and_wait "$PROBLEM_ID" "$CODE_STALL")
+elapsed=$((SECONDS - t0))
+status=$(jq -r '.status' <<<"$result")
+log "  status=${status} elapsed=${elapsed}s"
+# The robust signal is SEMANTIC, not timing: post-fix each case resolves via its
+# own PER-CASE timeout (→ FAILED with TIMEOUT results). Had the grandchild stalled
+# the harness, only the outer wall-clock backstop would have fired, marking the
+# whole submission infra-ERROR. So FAILED + a TIMEOUT result == the per-case
+# timeout won == no stall. (elapsed is logged as a secondary sanity check.)
+if [[ "$status" == "FAILED" ]] && has_result_status "$result" "TIMEOUT"; then
+  record_pass "grandchild no-stall" "status=${status} via per-case TIMEOUT (not wall-clock ERROR), ${elapsed}s"
+else
+  record_fail "grandchild no-stall" "expected FAILED with a TIMEOUT result (per-case timeout, no stall), got status=${status} results=$(jq -c '.results' <<<"$result") elapsed=${elapsed}s"
+fi
+log ""
+
+# ---------------------------------------------------------------------------
 # Summary table
 # ---------------------------------------------------------------------------
 

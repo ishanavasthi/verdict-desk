@@ -92,6 +92,12 @@ export function computeVerdict(
     return { testCaseId: testCase.id, status: 'ERROR', stdout, stderr, timeMs };
   }
 
+  // Truncated stdout is incomplete by definition — it must NEVER be treated as a
+  // PASS (otherwise the verdict would depend on where the cap happened to land).
+  if (result.stdoutTruncated) {
+    return { testCaseId: testCase.id, status: 'FAIL', stdout, stderr, timeMs };
+  }
+
   if (result.exitCode === 0 && stdout.trim() === testCase.expectedOutput.trim()) {
     return { testCaseId: testCase.id, status: 'PASS', stdout, stderr, timeMs };
   }

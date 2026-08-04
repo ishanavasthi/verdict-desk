@@ -54,6 +54,20 @@ describe('computeVerdict', () => {
     expect(computeVerdict(tc(), result).status).toBe('FAIL');
   });
 
+  it('FAIL (never PASS) when stdout was truncated, even if the captured prefix matches', () => {
+    const result: HarnessCaseResult = {
+      id: 'tc-1',
+      stdout: '5\n', // would match, but…
+      stderr: '',
+      stdoutTruncated: true, // …output was capped mid-stream, so it's incomplete
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      timeMs: 1,
+    };
+    expect(computeVerdict(tc(), result).status).toBe('FAIL');
+  });
+
   it('FAIL when stdout matches but exitCode is non-zero', () => {
     const result: HarnessCaseResult = {
       id: 'tc-1',

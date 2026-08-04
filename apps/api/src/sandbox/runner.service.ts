@@ -119,7 +119,11 @@ export class SandboxRunnerService {
     const numCases = Math.max(cases.length, 1);
     const stdoutCapBytes = clamp(numCases * 100 * 1024, 1 * 1024 * 1024, 16 * 1024 * 1024);
     const stderrCapBytes = 256 * 1024;
-    const wallClockTimeoutMs = clamp(numCases * perCaseTimeoutMs + 5000, 10000, 120000);
+    // Must always exceed the sum of per-case budgets so it never PRE-EMPTS a
+    // legitimately-slow (but correct) many-case run — each case can take up to
+    // perCaseTimeoutMs + the harness's hard-settle/grace (~600ms) + spawn
+    // overhead. Generous absolute ceiling still bounds a wedged container.
+    const wallClockTimeoutMs = clamp(numCases * (perCaseTimeoutMs + 1000) + 10000, 15000, 600000);
 
     try {
       // Write the untrusted program, copy the TRUSTED harness verbatim, and
@@ -241,18 +245,46 @@ export class SandboxRunnerService {
       // argv array — NEVER a shell string.
       const child = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] });
 
-      let stdout = '';
-      let stderr = '';
       let timedOut = false;
       let settled = false;
+      let killed = false;
+
+      const killContainer = () => {
+        if (killed) return;
+        killed = true;
+        const killer = spawn('docker', ['kill', containerName], { stdio: 'ignore' });
+        killer.on('error', () => {});
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          /* ignore */
+        }
+      };
+
+      // Cap host-side capture even on this (trusted, spike-only) path — same
+      // streaming primitive as the grading path, NEVER the uncapped
+      // `str += chunk` pattern, so a flood can't grow the API's RSS.
+      const stdoutCollector = new CappedCollector({
+        capBytes: 2 * 1024 * 1024,
+        onExceeded: () => {
+          this.logger.warn(`runOnce stdout cap exceeded for ${containerName}`);
+          killContainer();
+        },
+      });
+      const stderrCollector = new CappedCollector({
+        capBytes: 256 * 1024,
+        onExceeded: () => killContainer(),
+      });
+      stdoutCollector.attach(child.stdout);
+      stderrCollector.attach(child.stderr);
 
       const finish = (exitCode: number | null) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         resolve({
-          stdout,
-          stderr,
+          stdout: stdoutCollector.text(),
+          stderr: stderrCollector.text(),
           exitCode,
           timedOut,
           durationMs: Date.now() - startedAt,
@@ -262,28 +294,11 @@ export class SandboxRunnerService {
       const timer = setTimeout(() => {
         timedOut = true;
         this.logger.warn(`timeout after ${timeoutMs}ms; killing ${containerName}`);
-        // Best-effort hard kill of the container.
-        const killer = spawn('docker', ['kill', containerName], {
-          stdio: 'ignore',
-        });
-        killer.on('error', () => {});
-        // Also try to kill the docker CLI child so we don't leak the process.
-        try {
-          child.kill('SIGKILL');
-        } catch {
-          /* ignore */
-        }
+        killContainer();
       }, timeoutMs);
 
-      child.stdout.on('data', (d: Buffer) => {
-        stdout += d.toString('utf8');
-      });
-      child.stderr.on('data', (d: Buffer) => {
-        stderr += d.toString('utf8');
-      });
-
       child.on('error', (err) => {
-        stderr += `\n[spawn error] ${err.message}`;
+        this.logger.error(`docker spawn error: ${err.message}`);
         finish(null);
       });
 
@@ -292,10 +307,12 @@ export class SandboxRunnerService {
       });
 
       // Feed stdin, if any, then close.
-      if (stdin !== undefined) {
-        child.stdin.write(stdin);
+      try {
+        if (stdin !== undefined) child.stdin.write(stdin);
+        child.stdin.end();
+      } catch {
+        /* ignore EPIPE if the container already exited */
       }
-      child.stdin.end();
     });
   }
 }

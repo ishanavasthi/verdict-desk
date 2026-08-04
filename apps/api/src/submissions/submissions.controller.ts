@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, NotFoundException, Param, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  NotFoundException,
+  Param,
+  Post,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubmissionQueueService } from './submission-queue.service';
 import { CreateSubmissionDto } from './dto/create-submission.dto';
@@ -37,6 +47,12 @@ export class SubmissionsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() dto: CreateSubmissionDto): Promise<CreateSubmissionResponse> {
+    // Backpressure: reject (503) when the grading backlog is full, BEFORE
+    // creating a row — so we never leave an ungradeable QUEUED submission.
+    if (!this.queue.canAccept()) {
+      throw new ServiceUnavailableException('grading queue is full — retry shortly');
+    }
+
     const userId = dto.userId ?? (await this.resolveStopgapUserId());
 
     const submission = await this.prisma.submission.create({

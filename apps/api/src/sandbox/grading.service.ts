@@ -108,24 +108,35 @@ export class GradingService {
     );
     const status = computeSubmissionStatus(verdicts, false);
 
-    await this.prisma.$transaction([
-      ...verdicts.map((v) =>
-        this.prisma.testResult.create({
-          data: {
-            submissionId,
-            testCaseId: v.testCaseId,
-            status: v.status as TestResultStatus,
-            stdout: v.stdout,
-            stderr: v.stderr,
-            timeMs: Math.round(v.timeMs),
-          },
+    try {
+      await this.prisma.$transaction([
+        ...verdicts.map((v) =>
+          this.prisma.testResult.create({
+            data: {
+              submissionId,
+              testCaseId: v.testCaseId,
+              status: v.status as TestResultStatus,
+              stdout: v.stdout,
+              stderr: v.stderr,
+              timeMs: Math.round(v.timeMs),
+            },
+          }),
+        ),
+        this.prisma.submission.update({
+          where: { id: submissionId },
+          data: { status: status as SubmissionStatus, score },
         }),
-      ),
-      this.prisma.submission.update({
-        where: { id: submissionId },
-        data: { status: status as SubmissionStatus, score },
-      }),
-    ]);
+      ]);
+    } catch (err) {
+      // The $transaction is atomic (no partial results committed), so it's safe
+      // to fall back to marking the whole submission ERROR — never leave it
+      // stuck RUNNING because the final persist hiccuped.
+      await this.markInfraError(
+        submissionId,
+        testCases,
+        `failed to persist grading result: ${(err as Error).message}`,
+      );
+    }
   }
 
   private async markInfraError(

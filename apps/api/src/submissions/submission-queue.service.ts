@@ -5,6 +5,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GradingService } from '../sandbox/grading.service';
 
 const DEFAULT_CONCURRENCY = 2;
+// Bound the in-memory backlog so a flood of POSTs can't grow the queue array
+// (and thus host memory) without limit. Beyond this, POST /submissions -> 503.
+const DEFAULT_MAX_PENDING = 200;
 
 /**
  * Seam other backends (e.g. BullMQ) can implement instead of
@@ -26,6 +29,7 @@ export interface SubmissionQueue {
 export class SubmissionQueueService implements SubmissionQueue, OnModuleInit {
   private readonly logger = new Logger(SubmissionQueueService.name);
   private readonly concurrency: number;
+  private readonly maxPending: number;
   private readonly pending: string[] = [];
   private active = 0;
 
@@ -37,6 +41,16 @@ export class SubmissionQueueService implements SubmissionQueue, OnModuleInit {
     const configured = Number(this.config.get<string>('GRADING_CONCURRENCY'));
     this.concurrency =
       Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : DEFAULT_CONCURRENCY;
+    const configuredMax = Number(this.config.get<string>('GRADING_MAX_PENDING'));
+    this.maxPending =
+      Number.isFinite(configuredMax) && configuredMax > 0
+        ? Math.floor(configuredMax)
+        : DEFAULT_MAX_PENDING;
+  }
+
+  /** Backpressure: false when the in-memory backlog is full (controller → 503). */
+  canAccept(): boolean {
+    return this.pending.length < this.maxPending;
   }
 
   /**
@@ -67,8 +81,18 @@ export class SubmissionQueueService implements SubmissionQueue, OnModuleInit {
       this.active += 1;
       this.grading
         .grade(id)
-        .catch((err) => {
+        .catch(async (err) => {
           this.logger.error(`grading failed for submission ${id}: ${(err as Error).message}`);
+          // Backstop: grade() marks ERROR itself on known failures, but if it
+          // threw before doing so, never leave the row stuck QUEUED/RUNNING.
+          try {
+            await this.prisma.submission.updateMany({
+              where: { id, status: { in: [SubmissionStatus.QUEUED, SubmissionStatus.RUNNING] } },
+              data: { status: SubmissionStatus.ERROR },
+            });
+          } catch (e2) {
+            this.logger.error(`could not mark ${id} ERROR after grade() threw: ${(e2 as Error).message}`);
+          }
         })
         .finally(() => {
           this.active -= 1;

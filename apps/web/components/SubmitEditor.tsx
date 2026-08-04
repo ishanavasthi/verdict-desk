@@ -3,13 +3,13 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import SubmissionResults from './SubmissionResults';
+import LiveSubmissionView from './LiveSubmissionView';
 import { isTerminalStatus, type CreateSubmissionResponse, type SubmissionDetail } from '../lib/api';
 
 const POLL_INTERVAL_MS = 1000;
 const MAX_POLL_ATTEMPTS = 30; // ~30s cap before we tell the user to check back later.
-const MAX_FEEDBACK_POLL_ATTEMPTS = 10; // ~10s cap for AI feedback after grading finishes.
 
-type Phase = 'idle' | 'submitting' | 'polling' | 'polling-feedback' | 'busy' | 'timeout' | 'error';
+type Phase = 'idle' | 'submitting' | 'polling' | 'busy' | 'timeout' | 'error';
 
 function starterCode(problemTitle: string): string {
   return `// ${problemTitle}\n// Write your solution below, then hit Submit.\n`;
@@ -24,8 +24,6 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attemptsRef = useRef(0);
-  const feedbackAttemptsRef = useRef(0);
-  const awaitingFeedbackRef = useRef(false);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -46,15 +44,11 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
   }
 
   async function pollSubmission(id: string) {
-    // Once grading reaches a terminal status we switch to a separate,
-    // shorter-capped polling mode just to pick up `feedback` (generated a
-    // moment after grading finishes) without a manual refresh.
-    const isFeedbackPoll = awaitingFeedbackRef.current;
-    if (isFeedbackPoll) {
-      feedbackAttemptsRef.current += 1;
-    } else {
-      attemptsRef.current += 1;
-    }
+    // Poll only until grading reaches a terminal status. AI feedback (which
+    // lands a moment later, and can take ~1–2 min with the live model) is then
+    // handed off to <LiveSubmissionView>, which owns the feedback poll + a
+    // manual refresh — so we don't duplicate that logic here.
+    attemptsRef.current += 1;
 
     try {
       const res = await fetch(`/api/submissions/${id}`, { cache: 'no-store' });
@@ -74,34 +68,18 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
       setSubmission(data);
 
       if (isTerminalStatus(data.status)) {
-        if (data.feedback !== null || feedbackAttemptsRef.current >= MAX_FEEDBACK_POLL_ATTEMPTS) {
-          setPhase('idle');
-          stopPolling();
-          return;
-        }
-
-        // Grading is done but feedback hasn't landed yet — keep polling a
-        // few more times, capped, then give up and leave the "generating…"
-        // placeholder showing (feedback may still arrive on a later visit).
-        awaitingFeedbackRef.current = true;
-        setPhase('polling-feedback');
-        pollTimer.current = setTimeout(() => pollSubmission(id), POLL_INTERVAL_MS);
-        return;
-      }
-    } catch {
-      // Transient errors while polling are swallowed — we just keep trying
-      // until the relevant cap is hit.
-    }
-
-    if (!mountedRef.current) return;
-
-    if (isFeedbackPoll) {
-      if (feedbackAttemptsRef.current >= MAX_FEEDBACK_POLL_ATTEMPTS) {
         setPhase('idle');
         stopPolling();
         return;
       }
-    } else if (attemptsRef.current >= MAX_POLL_ATTEMPTS) {
+    } catch {
+      // Transient errors while polling are swallowed — we just keep trying
+      // until the cap is hit.
+    }
+
+    if (!mountedRef.current) return;
+
+    if (attemptsRef.current >= MAX_POLL_ATTEMPTS) {
       setPhase('timeout');
       stopPolling();
       return;
@@ -116,8 +94,6 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
     setErrorMessage(null);
     setSubmission(null);
     attemptsRef.current = 0;
-    feedbackAttemptsRef.current = 0;
-    awaitingFeedbackRef.current = false;
     setPhase('submitting');
 
     try {
@@ -171,7 +147,6 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
             {phase === 'submitting' ? 'Submitting…' : phase === 'polling' ? 'Grading…' : 'Submit'}
           </button>
           {phase === 'polling' && <span className="hint">Waiting for results…</span>}
-          {phase === 'polling-feedback' && <span className="hint">Waiting for AI feedback…</span>}
         </div>
       </form>
 
@@ -186,7 +161,15 @@ export default function SubmitEditor({ problemId, problemTitle }: { problemId: s
         </p>
       )}
 
-      {submission && <SubmissionResults submission={submission} />}
+      {submission &&
+        (isTerminalStatus(submission.status) ? (
+          // Grading finished — hand off to the live view, which keeps the AI
+          // feedback fresh (poll + manual refresh) without a page reload.
+          <LiveSubmissionView initial={submission} key={submission.id} />
+        ) : (
+          // Still grading — show the in-progress snapshot (no feedback poll yet).
+          <SubmissionResults submission={submission} />
+        ))}
     </section>
   );
 }

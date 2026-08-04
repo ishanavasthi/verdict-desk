@@ -102,12 +102,24 @@ export interface SubmissionFeedback {
   content: FeedbackContent | null;
 }
 
+/**
+ * Coarse generation state of the AI feedback, so the UI can poll/show a
+ * pending spinner instead of inferring from `feedback === null`:
+ *  - `PENDING` — feedback expected but not yet available (the live model can
+ *    take ~1–2 min); keep polling and show a "generating…" state.
+ *  - `READY`   — validated feedback available (`feedback.content` present).
+ *  - `FAILED`  — generation ran but couldn't be validated; show a fallback.
+ *  - `SKIPPED` — no feedback will be produced (submission ERRORed); hide the card.
+ */
+export type FeedbackGenerationStatus = 'PENDING' | 'READY' | 'FAILED' | 'SKIPPED';
+
 export interface SubmissionDetail {
   id: string;
   problemId: string;
   status: SubmissionStatus;
   score: number | null;
   results: TestResultView[];
+  feedbackStatus: FeedbackGenerationStatus;
   feedback: SubmissionFeedback | null;
 }
 

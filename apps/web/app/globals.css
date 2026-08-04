@@ -551,9 +551,63 @@ body {
 
 .feedback-placeholder {
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
   font-size: 0.85rem;
   color: var(--color-text-muted);
   font-style: italic;
+}
+
+.feedback-hint {
+  font-style: normal;
+  opacity: 0.85;
+}
+
+/* Push the "Refresh" affordance to the right edge of the feedback header. */
+.feedback-header .btn {
+  margin-left: auto;
+}
+
+/* Small, low-emphasis button used for inline affordances (e.g. Refresh). */
+.btn-sm {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.78rem;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.spinner {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spinner-rotate 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2s;
+  }
 }
 
 .feedback-note {

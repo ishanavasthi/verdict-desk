@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getAuthToken } from '../../../lib/auth';
 import { ApiError, getSubmission, type SubmissionDetail } from '../../../lib/api';
-import SubmissionResults from '../../../components/SubmissionResults';
+import LiveSubmissionView from '../../../components/LiveSubmissionView';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +28,15 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
       redirect('/login');
     }
     unreachable = true;
-    submission = { id, problemId: '', status: 'QUEUED', score: null, results: [], feedback: null };
+    submission = {
+      id,
+      problemId: '',
+      status: 'QUEUED',
+      score: null,
+      results: [],
+      feedbackStatus: 'PENDING',
+      feedback: null,
+    };
   }
 
   return (
@@ -44,7 +52,7 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
         {unreachable ? (
           <p className="empty-state">Could not load this submission — API unreachable.</p>
         ) : (
-          <SubmissionResults submission={submission} />
+          <LiveSubmissionView initial={submission} />
         )}
       </section>
     </main>

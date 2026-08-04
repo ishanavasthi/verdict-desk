@@ -1,15 +1,24 @@
 import type { SubmissionDetail } from '../lib/api';
-import { feedbackSeverityLabel, statusBadgeClass, submissionStatusLabel } from '../lib/status';
+import { statusBadgeClass, submissionStatusLabel } from '../lib/status';
+import FeedbackCard from './FeedbackCard';
 
 /**
  * Renders the outcome of a single submission: overall status/score plus a
- * per-test-case breakdown. Used both by the live editor (after polling
- * reaches a terminal status) and by the static `/submissions/[id]` page —
- * pure presentational, no client-only APIs, so it works from either a
- * Server or a Client Component tree.
+ * per-test-case breakdown and the AI feedback card. Pure presentational, no
+ * client-only APIs, so it works from either a Server or Client Component tree.
+ *
+ * `onRefreshFeedback`/`refreshingFeedback` are only supplied by client callers
+ * that can re-fetch (e.g. `LiveSubmissionView`); server renders omit them.
  */
-export default function SubmissionResults({ submission }: { submission: SubmissionDetail }) {
-  const { feedback } = submission;
+export default function SubmissionResults({
+  submission,
+  onRefreshFeedback,
+  refreshingFeedback,
+}: {
+  submission: SubmissionDetail;
+  onRefreshFeedback?: () => void;
+  refreshingFeedback?: boolean;
+}) {
   return (
     <div className="results">
       <div className="results-summary">
@@ -58,35 +67,12 @@ export default function SubmissionResults({ submission }: { submission: Submissi
         </ul>
       )}
 
-      <div className="feedback-card">
-        <div className="feedback-header">
-          <span className="feedback-label">&#129302; AI-generated feedback &middot; UNREVIEWED</span>
-        </div>
-        <p className="feedback-subline">Automated code-quality notes — not verified by a human.</p>
-
-        {feedback === null ? (
-          <p className="feedback-placeholder">Generating AI feedback&hellip;</p>
-        ) : feedback.status === 'VALID' && feedback.content ? (
-          <div className="feedback-body">
-            <span className={`badge badge-sm badge-severity-${feedback.content.severity}`}>
-              {feedbackSeverityLabel(feedback.content.severity)}
-            </span>
-            <p className="feedback-summary">{feedback.content.summary}</p>
-            {feedback.content.suggestions.length > 0 && (
-              <ul className="feedback-suggestions">
-                {feedback.content.suggestions.map((suggestion, index) => (
-                  <li key={index} className="feedback-suggestion">
-                    <strong>{suggestion.title}</strong>
-                    <p>{suggestion.detail}</p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ) : (
-          <p className="feedback-note">AI feedback couldn&rsquo;t be generated for this submission.</p>
-        )}
-      </div>
+      <FeedbackCard
+        feedbackStatus={submission.feedbackStatus}
+        feedback={submission.feedback}
+        onRefresh={onRefreshFeedback}
+        refreshing={refreshingFeedback}
+      />
     </div>
   );
 }

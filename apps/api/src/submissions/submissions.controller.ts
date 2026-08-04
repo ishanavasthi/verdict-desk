@@ -41,13 +41,47 @@ export interface SubmissionFeedbackView {
   content: unknown;
 }
 
+/**
+ * Coarse generation state for the AI feedback, so the client can poll
+ * intelligently instead of guessing from `feedback === null`:
+ *  - `PENDING`  — feedback is expected but hasn't landed yet (grading still
+ *                 running, or the async fire-and-forget job hasn't finished).
+ *                 The live model can take ~1–2 min, so the client keeps polling.
+ *  - `READY`    — validated feedback is available (`feedback.content` present).
+ *  - `FAILED`   — generation ran but the output failed validation twice
+ *                 (`feedback.status === 'FLAGGED'`); a safe fallback is shown.
+ *  - `SKIPPED`  — no feedback will ever be produced (submission ERRORed, so
+ *                 there's no meaningful code output to critique).
+ */
+export type FeedbackGenerationStatus = 'PENDING' | 'READY' | 'FAILED' | 'SKIPPED';
+
 export interface SubmissionView {
   id: string;
   problemId: string;
   status: string;
   score: number | null;
   results: RedactedTestResultView[];
+  feedbackStatus: FeedbackGenerationStatus;
   feedback: SubmissionFeedbackView | null;
+}
+
+/**
+ * Derive the feedback generation state from the submission status and the
+ * (optional) persisted feedback row. Mirrors grading.service.ts, which only
+ * fires feedback generation for PASSED/FAILED submissions — an ERRORed
+ * submission never gets a row, so it is SKIPPED rather than perpetually PENDING.
+ */
+export function computeFeedbackStatus(
+  submissionStatus: string,
+  feedback: { validationStatus: string } | null,
+): FeedbackGenerationStatus {
+  if (feedback) {
+    return feedback.validationStatus === 'VALID' ? 'READY' : 'FAILED';
+  }
+  if (submissionStatus === 'ERROR') {
+    return 'SKIPPED';
+  }
+  return 'PENDING';
 }
 
 export interface SubmissionHistoryItem {
@@ -148,6 +182,7 @@ export class SubmissionsController {
       status: submission.status,
       score: submission.score,
       results: redactResults(rawResults, hiddenByTestCaseId),
+      feedbackStatus: computeFeedbackStatus(submission.status, submission.aiFeedback),
       feedback: submission.aiFeedback
         ? {
             status: submission.aiFeedback.validationStatus as 'VALID' | 'FLAGGED',

@@ -89,7 +89,7 @@ uses this exact argv (assembled as an **array, never a shell string** — comman
 ```
 docker run --rm --init --network none --memory 256m --memory-swap 256m --cpus 0.5 \
   --pids-limit 64 --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m \
-  --cap-drop ALL --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges \
+  --cap-drop ALL --cap-add SETUID --cap-add SETGID --cap-add KILL --security-opt no-new-privileges \
   -v <tmp>:/work:ro -w /work node:20-alpine node /work/harness.js
 ```
 
@@ -101,7 +101,7 @@ docker run --rm --init --network none --memory 256m --memory-swap 256m --cpus 0.
 | `--pids-limit 64` | **Fork bombs** — the kernel caps the process count (verified: a fork bomb is contained, docker daemon stays responsive). |
 | `--read-only` + `-v …:/work:ro` | Filesystem tampering / persistence (verified: writing to `/work` or `/etc` fails). |
 | `--tmpfs /tmp:…,noexec,nosuid` | Gives a small scratch space that **can't execute** dropped binaries or gain setuid. |
-| `--cap-drop ALL` + `--cap-add SETUID` + `--cap-add SETGID` | Strips every Linux capability, then re-adds **only** the two the harness needs to drop the submission's uid itself (see below); `no-new-privileges` still blocks privilege *gain* on execve. |
+| `--cap-drop ALL` + `--cap-add SETUID` + `--cap-add SETGID` + `--cap-add KILL` | Strips every Linux capability, then re-adds **only** the three the harness needs: `SETUID`/`SETGID` to drop the submission's uid itself, and `KILL` to SIGKILL a timed-out child that no longer shares its uid (see below); `no-new-privileges` still blocks privilege *gain* on execve. |
 | `--init` | tini reaps orphaned/forked grandchildren (PID 1). |
 | `--rm` | The container (and everything a payload did to its own filesystem) is destroyed on exit. |
 
@@ -111,7 +111,7 @@ weakens the sandbox, but it does the opposite: it lets the *trusted* harness its
 the untrusted `main.js` still **never** runs as root — it runs at the same unprivileged uid as before, just no
 longer as the *same* uid as PID 1. `no-new-privileges` still holds: it blocks a process from **gaining** privilege
 on `execve` (e.g. via a setuid binary), not a root process **voluntarily dropping** privilege via `setuid()`, which
-is what's happening here. `--cap-drop ALL` still strips everything else; `SETUID`/`SETGID` are the only two
+is what's happening here. `--cap-drop ALL` still strips everything else; `SETUID`/`SETGID`/`KILL` are the only three
 capabilities added back, and only PID 1 has them — the submission child, running at uid 65534, has none. The
 explicit trade: in-container root for one trusted, dependency-free, code-reviewed file (`harness.js`), in exchange
 for closing the `/proc/1/fd/1` self-injection gap below.
@@ -198,9 +198,14 @@ DB, every legal one allowed) plus state-machine unit tests — see [Testing](#te
 - ~~**Same-uid `/proc/<pid>/fd` write inside the container.**~~ **CLOSED.** `main.js` and the harness (PID 1) used
   to share uid 65534, so a payload could write to `/proc/1/fd/1` to corrupt/replace *its own* result blob. Fixed by
   giving them **distinct uids**: PID 1 (tini + `harness.js`) now runs as in-container **root**, with only the
-  `SETUID`/`SETGID` capabilities added back (`--cap-drop ALL --cap-add SETUID --cap-add SETGID`, `--user` removed —
+  `SETUID`/`SETGID`/`KILL` capabilities added back (`--cap-drop ALL --cap-add SETUID --cap-add SETGID --cap-add KILL`,
+  `--user` removed —
   see [§1](#1-the-grading-sandbox)), and the harness spawns every submission child via
-  `spawn(main.js, { uid: 65534, gid: 65534 })`. `no-new-privileges` is unaffected (it blocks privilege *gain* on
+  `spawn(main.js, { uid: 65534, gid: 65534 })`. `CAP_KILL` is required *by* that separation: a process may only
+  signal another whose uid matches its own unless it holds `CAP_KILL`, so without it the harness could no longer
+  SIGKILL a timed-out child and every per-case timeout degraded to `ERROR` (`kill EPERM`) instead of `TIMEOUT` —
+  caught by re-running `scripts/abuse-demo.sh` after the uid change. It grants nothing outside the container's
+  own PID namespace. `no-new-privileges` is unaffected (it blocks privilege *gain* on
   execve, not a root process voluntarily calling `setuid()`). The submission still **never** runs as root — it runs
   at the exact same unprivileged uid as before, just no longer the *same* uid as PID 1 — so `/proc/1/fd/1` is now
   owned by a uid the submission doesn't have, and the write fails **`EACCES`/`EPERM`**. The explicit trade: an

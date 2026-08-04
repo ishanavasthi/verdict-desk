@@ -4,6 +4,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
 import { ProblemsModule } from './problems/problems.module';
 import { SandboxModule } from './sandbox/sandbox.module';
+import { SubmissionsModule } from './submissions/submissions.module';
 import { AiModule } from './ai/ai.module';
 import { AppLogger } from './common/app-logger.service';
 import { RequestIdMiddleware } from './common/request-id.middleware';
@@ -15,6 +16,7 @@ import { RequestIdMiddleware } from './common/request-id.middleware';
     HealthModule,
     ProblemsModule,
     SandboxModule,
+    SubmissionsModule,
     AiModule,
   ],
   providers: [AppLogger],

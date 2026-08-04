@@ -5,6 +5,21 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { buildDockerRunArgs } from './docker-args';
+import { CappedCollector } from './capped-collector';
+import { buildManifest, ManifestCase } from './manifest';
+
+/**
+ * Path to the trusted harness.js, resolved relative to THIS file at runtime.
+ * In dev (ts-jest/tsx reading src/) this resolves under src/sandbox/harness/.
+ * In the built server, __dirname is dist/sandbox, and nest-cli's asset copy
+ * step (see nest-cli.json `compilerOptions.assets`) places harness.js at
+ * dist/sandbox/harness/harness.js — same relative layout either way.
+ */
+const HARNESS_SRC_PATH = path.join(__dirname, 'harness', 'harness.js');
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
 
 export interface RunOnceInput {
   /** JavaScript source to run as /work/main.js inside the container. */
@@ -21,6 +36,30 @@ export interface RunOnceResult {
   exitCode: number | null;
   timedOut: boolean;
   durationMs: number;
+}
+
+export interface RunSubmissionCase {
+  id: string;
+  input: string;
+}
+
+export interface RunSubmissionInput {
+  submissionId: string;
+  /** JavaScript source to run as /work/main.js inside the container, once per case. */
+  code: string;
+  cases: RunSubmissionCase[];
+  perCaseTimeoutMs: number;
+}
+
+export interface RunSubmissionResult {
+  /** The container's own stdout — a single capped JSON blob written by harness.js. */
+  rawStdout: string;
+  stdoutTruncated: boolean;
+  stderr: string;
+  stderrTruncated: boolean;
+  exitCode: number | null;
+  /** True if the OUTER wall-clock timeout (covering all cases) fired. */
+  timedOut: boolean;
 }
 
 /**
@@ -59,6 +98,136 @@ export class SandboxRunnerService {
         this.logger.warn(`temp cleanup failed for ${tmpDir}: ${(err as Error).message}`);
       }
     }
+  }
+
+  /**
+   * Runs ALL test cases for one submission inside ONE hardened container, via
+   * the trusted `harness.js` entrypoint (`entryFile: 'harness.js'`). The
+   * container never sees expectedOutput/weight/hidden (see `buildManifest`);
+   * pass/fail verdicts are computed host-side by `GradingService`.
+   *
+   * Host-side stdout/stderr capture uses `CappedCollector` (NOT the uncapped
+   * `stdout += chunk` pattern `runOnce` uses) — this is the fix for the
+   * streaming-memory DoS hole on the grading path, since a hostile submission
+   * could otherwise make the container itself flood its own real stdout.
+   */
+  async runSubmission(input: RunSubmissionInput): Promise<RunSubmissionResult> {
+    const { submissionId, code, cases, perCaseTimeoutMs } = input;
+    const containerName = `verdict-sub-${randomUUID()}`;
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'verdict-sub-'));
+
+    const numCases = Math.max(cases.length, 1);
+    const stdoutCapBytes = clamp(numCases * 100 * 1024, 1 * 1024 * 1024, 16 * 1024 * 1024);
+    const stderrCapBytes = 256 * 1024;
+    const wallClockTimeoutMs = clamp(numCases * perCaseTimeoutMs + 5000, 10000, 120000);
+
+    try {
+      // Write the untrusted program, copy the TRUSTED harness verbatim, and
+      // write the least-privilege manifest (no expectedOutput/weight/hidden).
+      fs.writeFileSync(path.join(tmpDir, 'main.js'), code, 'utf8');
+      fs.copyFileSync(HARNESS_SRC_PATH, path.join(tmpDir, 'harness.js'));
+
+      const manifest = buildManifest({
+        submissionId,
+        perCaseTimeoutMs,
+        cases: cases.map((c): ManifestCase => ({ id: c.id, input: c.input })),
+      });
+      fs.writeFileSync(path.join(tmpDir, 'manifest.json'), JSON.stringify(manifest), 'utf8');
+
+      const args = buildDockerRunArgs({ containerName, hostTmpDir: tmpDir, entryFile: 'harness.js' });
+      this.logger.debug(`docker ${args.join(' ')}`);
+
+      return await this.spawnDockerCapped(
+        containerName,
+        args,
+        stdoutCapBytes,
+        stderrCapBytes,
+        wallClockTimeoutMs,
+      );
+    } finally {
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch (err) {
+        this.logger.warn(`temp cleanup failed for ${tmpDir}: ${(err as Error).message}`);
+      }
+    }
+  }
+
+  private spawnDockerCapped(
+    containerName: string,
+    args: string[],
+    stdoutCapBytes: number,
+    stderrCapBytes: number,
+    wallClockTimeoutMs: number,
+  ): Promise<RunSubmissionResult> {
+    return new Promise<RunSubmissionResult>((resolve) => {
+      // argv array — NEVER a shell string. No stdin: harness reads all case
+      // input from manifest.json, not from the docker CLI's stdin.
+      const child = spawn('docker', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+      let timedOut = false;
+      let settled = false;
+      let killed = false;
+
+      const killContainer = () => {
+        if (killed) return;
+        killed = true;
+        this.logger.warn(`killing ${containerName}`);
+        const killer = spawn('docker', ['kill', containerName], { stdio: 'ignore' });
+        killer.on('error', () => {});
+      };
+
+      const stdoutCollector = new CappedCollector({
+        capBytes: stdoutCapBytes,
+        onExceeded: () => {
+          this.logger.warn(`grading stdout cap exceeded for ${containerName}`);
+          killContainer();
+        },
+      });
+      const stderrCollector = new CappedCollector({
+        capBytes: stderrCapBytes,
+        onExceeded: () => {
+          this.logger.warn(`grading stderr cap exceeded for ${containerName}`);
+          killContainer();
+        },
+      });
+      stdoutCollector.attach(child.stdout);
+      stderrCollector.attach(child.stderr);
+
+      const finish = (exitCode: number | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve({
+          rawStdout: stdoutCollector.text(),
+          stdoutTruncated: stdoutCollector.truncated,
+          stderr: stderrCollector.text(),
+          stderrTruncated: stderrCollector.truncated,
+          exitCode,
+          timedOut,
+        });
+      };
+
+      const timer = setTimeout(() => {
+        timedOut = true;
+        this.logger.warn(`wall-clock timeout after ${wallClockTimeoutMs}ms; killing ${containerName}`);
+        killContainer();
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          /* ignore */
+        }
+      }, wallClockTimeoutMs);
+
+      child.on('error', (err) => {
+        this.logger.error(`docker spawn error: ${err.message}`);
+        finish(null);
+      });
+
+      child.on('close', (codeExit) => {
+        finish(codeExit);
+      });
+    });
   }
 
   private spawnDocker(

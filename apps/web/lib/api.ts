@@ -32,10 +32,23 @@ export interface User {
   name: string | null;
 }
 
+/**
+ * What kind of answer a problem expects. CODE runs in the Docker sandbox;
+ * MCQ/INTEGER are graded instantly server-side against a secret `answerKey`
+ * that — like hidden test-case expected outputs — is NEVER sent to clients.
+ */
+export type QuestionKind = 'CODE' | 'MCQ' | 'INTEGER';
+
+export interface McqOption {
+  id: string;
+  text: string;
+}
+
 export interface Problem {
   id: string;
   title: string;
   difficulty: string | null;
+  kind: QuestionKind;
 }
 
 export interface SampleTestCase {
@@ -48,6 +61,9 @@ export interface ProblemDetail {
   title: string;
   description: string;
   difficulty: string | null;
+  kind: QuestionKind;
+  /** MCQ only (null otherwise): the choices, without any correctness marker. */
+  options: McqOption[] | null;
   sampleTestCases: SampleTestCase[];
 }
 
@@ -116,6 +132,10 @@ export type FeedbackGenerationStatus = 'PENDING' | 'READY' | 'FAILED' | 'SKIPPED
 export interface SubmissionDetail {
   id: string;
   problemId: string;
+  /** Kind of the problem this submission answers — MCQ/INTEGER render an answer view, not cases. */
+  problemKind: QuestionKind;
+  /** The raw submitted answer for MCQ/INTEGER submissions; null for CODE. */
+  submittedAnswer: string | null;
   status: SubmissionStatus;
   score: number | null;
   results: TestResultView[];
@@ -126,6 +146,7 @@ export interface SubmissionDetail {
 export interface SubmissionSummary {
   id: string;
   problemId: string;
+  problemKind: QuestionKind;
   status: SubmissionStatus;
   score: number | null;
   createdAt: string;

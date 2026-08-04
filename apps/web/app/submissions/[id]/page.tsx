@@ -30,7 +30,17 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
       redirect('/login');
     }
     unreachable = true;
-    submission = { id, problemId: '', status: 'QUEUED', score: null, results: [], feedbackStatus: 'PENDING', feedback: null };
+    submission = {
+      id,
+      problemId: '',
+      problemKind: 'CODE',
+      submittedAnswer: null,
+      status: 'QUEUED',
+      score: null,
+      results: [],
+      feedbackStatus: 'PENDING',
+      feedback: null,
+    };
   }
 
   return (

@@ -1,9 +1,13 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getMe } from '@/lib/auth';
-import { getProblems, type Problem } from '@/lib/api';
+import { getProblems, type Problem, type QuestionKind } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import PageShell from '@/components/PageShell';
+
+function kindLabel(kind: QuestionKind): string {
+  return kind === 'INTEGER' ? 'INT' : kind;
+}
 
 // Auth-gated: reads the request cookie via `getMe()`, so this can never be
 // statically rendered at build time (and the API may not even be running
@@ -46,6 +50,9 @@ export default async function HomePage() {
                   {String(index + 1).padStart(2, '0')}
                 </span>
                 <span className="flex-1 font-medium">{problem.title}</span>
+                <Badge variant="outline" className="font-mono text-[0.65rem] uppercase tracking-wider text-muted-foreground">
+                  {kindLabel(problem.kind)}
+                </Badge>
                 {problem.difficulty && (
                   <Badge variant="outline" className="font-mono text-[0.65rem] uppercase tracking-wider text-muted-foreground">
                     {problem.difficulty}

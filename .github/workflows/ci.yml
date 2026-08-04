@@ -43,3 +43,72 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+  browser-smoke:
+    needs: build-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # No `version:` here — action-setup reads pnpm from package.json's
+      # "packageManager" field. Specifying both errors with ERR_PNPM_BAD_PM_VERSION.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Create .env
+        run: cp .env.example .env
+
+      - name: Start db
+        run: docker compose up -d --wait db
+
+      - name: Migrate + seed
+        run: |
+          pnpm --filter @verdict/api prisma:deploy
+          pnpm seed
+
+      - name: Build api + web
+        run: pnpm build
+
+      - name: Start api
+        working-directory: apps/api
+        run: |
+          nohup node dist/main.js > /tmp/api.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:4000/health > /dev/null && exit 0
+            sleep 1
+          done
+          echo "api did not become healthy" && cat /tmp/api.log && exit 1
+
+      - name: Start web
+        working-directory: apps/web
+        run: |
+          nohup pnpm start > /tmp/web.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3000/login > /dev/null && exit 0
+            sleep 1
+          done
+          echo "web did not become healthy" && cat /tmp/web.log && exit 1
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser smoke test
+        run: node scripts/ci-browser-smoke.mjs
+
+      - name: Upload failure screenshot
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-smoke-failure
+          path: smoke-failure.png
+          if-no-files-found: ignore

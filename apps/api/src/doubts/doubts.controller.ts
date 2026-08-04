@@ -72,7 +72,7 @@ export class DoubtsController {
   /** The board: every doubt, newest first, each with only the viewer's visible answers. */
   @Get()
   async board(@CurrentUser() user: RequestUser): Promise<DoubtView[]> {
-    return this.prisma.doubt.findMany({
+    const doubts = await this.prisma.doubt.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
         answers: {
@@ -81,6 +81,7 @@ export class DoubtsController {
         },
       },
     });
+    return doubts.map((d) => this.toDoubtView(d));
   }
 
   @Get(':id')
@@ -97,6 +98,53 @@ export class DoubtsController {
     if (!doubt) {
       throw new NotFoundException(`doubt ${id} not found`);
     }
-    return doubt;
+    return this.toDoubtView(doubt);
+  }
+
+  /**
+   * Serialize a doubt for the board/detail, collapsing each answer to its
+   * EFFECTIVE text only. When a teacher approves-with-edits, `editedContent` is
+   * the vetted version and the raw `content` is the pre-edit AI draft the
+   * teacher deliberately replaced — students must NEVER receive that original
+   * (otherwise the edit is cosmetic and redaction leaks via the JSON response).
+   * So we return `content = editedContent ?? content` and drop the raw column.
+   * The teacher's `/review/queue` endpoint (separate) still exposes both for editing.
+   */
+  private toDoubtView(doubt: {
+    id: string;
+    problemId: string | null;
+    authorId: string;
+    title: string;
+    body: string;
+    createdAt: Date;
+    answers: {
+      id: string;
+      authorType: string;
+      state: string;
+      content: string;
+      editedContent: string | null;
+      reviewedById: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+    }[];
+  }): DoubtView {
+    return {
+      id: doubt.id,
+      problemId: doubt.problemId,
+      authorId: doubt.authorId,
+      title: doubt.title,
+      body: doubt.body,
+      createdAt: doubt.createdAt,
+      answers: doubt.answers.map((a) => ({
+        id: a.id,
+        authorType: a.authorType,
+        state: a.state,
+        content: a.editedContent ?? a.content,
+        editedContent: null,
+        reviewedById: a.reviewedById,
+        createdAt: a.createdAt,
+        updatedAt: a.updatedAt,
+      })),
+    };
   }
 }

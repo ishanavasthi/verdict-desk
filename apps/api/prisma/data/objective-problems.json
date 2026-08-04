@@ -1,0 +1,163 @@
+{
+  "source": "hand-curated",
+  "license": null,
+  "problems": [
+    {
+      "kind": "MCQ",
+      "title": "Big-O of Binary Search",
+      "description": "What is the time complexity of binary search on a sorted array of n elements?",
+      "difficulty": "easy",
+      "options": [
+        { "id": "a", "text": "O(n)" },
+        { "id": "b", "text": "O(log n)" },
+        { "id": "c", "text": "O(n log n)" },
+        { "id": "d", "text": "O(1)" }
+      ],
+      "answerKey": "b",
+      "testCases": null
+    },
+    {
+      "kind": "MCQ",
+      "title": "Event Loop Microtask Ordering",
+      "description": "In Node.js, given the following code:\nconsole.log('A');\nsetTimeout(() => console.log('B'), 0);\nPromise.resolve().then(() => console.log('C'));\nconsole.log('D');\nWhat is the printed order of A, B, C, D?",
+      "difficulty": "medium",
+      "options": [
+        { "id": "a", "text": "A D C B" },
+        { "id": "b", "text": "A D B C" },
+        { "id": "c", "text": "A C D B" },
+        { "id": "d", "text": "A B C D" }
+      ],
+      "answerKey": "a",
+      "testCases": null
+    },
+    {
+      "kind": "MCQ",
+      "title": "SQL Injection via String Concatenation",
+      "description": "A query is built by string concatenation as: SELECT * FROM users WHERE username = '<input>'. Which value for <input> lets an attacker bypass the WHERE clause and return every row in the table?",
+      "difficulty": "easy",
+      "options": [
+        { "id": "a", "text": "' OR '1'='1" },
+        { "id": "b", "text": "admin" },
+        { "id": "c", "text": "DROP TABLE users" },
+        { "id": "d", "text": "<script>alert(1)</script>" }
+      ],
+      "answerKey": "a",
+      "testCases": null
+    },
+    {
+      "kind": "MCQ",
+      "title": "HTTP Status Code for Rate Limiting",
+      "description": "Which HTTP status code is the standard response when a client has sent too many requests in a given time window?",
+      "difficulty": "easy",
+      "options": [
+        { "id": "a", "text": "403 Forbidden" },
+        { "id": "b", "text": "429 Too Many Requests" },
+        { "id": "c", "text": "503 Service Unavailable" },
+        { "id": "d", "text": "400 Bad Request" }
+      ],
+      "answerKey": "b",
+      "testCases": null
+    },
+    {
+      "kind": "MCQ",
+      "title": "Stack vs Queue Ordering",
+      "description": "A LIFO (last-in, first-out) access pattern best describes which of the following data structures?",
+      "difficulty": "easy",
+      "options": [
+        { "id": "a", "text": "Queue" },
+        { "id": "b", "text": "Stack" },
+        { "id": "c", "text": "Singly linked list traversal" },
+        { "id": "d", "text": "Hash map" }
+      ],
+      "answerKey": "b",
+      "testCases": null
+    },
+    {
+      "kind": "MCQ",
+      "title": "Least Privilege Docker Flag",
+      "description": "Which `docker run` flag drops all Linux capabilities from the container, following the principle of least privilege for an untrusted-code sandbox?",
+      "difficulty": "medium",
+      "options": [
+        { "id": "a", "text": "--cap-drop=ALL" },
+        { "id": "b", "text": "--privileged" },
+        { "id": "c", "text": "--security-opt=none" },
+        { "id": "d", "text": "--read-only" }
+      ],
+      "answerKey": "a",
+      "testCases": null
+    },
+    {
+      "kind": "MCQ",
+      "title": "Prompt Injection Defense",
+      "description": "A doubt-answering AI feature accepts free-text student questions and feeds them into an LLM prompt. Which mitigation most directly reduces the risk of prompt injection overriding the system instructions?",
+      "difficulty": "medium",
+      "options": [
+        { "id": "a", "text": "Increasing the LLM's temperature" },
+        { "id": "b", "text": "Clearly delimiting untrusted user input from system instructions, and treating model output as untrusted" },
+        { "id": "c", "text": "Caching LLM responses" },
+        { "id": "d", "text": "Using a larger context window" }
+      ],
+      "answerKey": "b",
+      "testCases": null
+    },
+    {
+      "kind": "MCQ",
+      "title": "SQL JOIN Type for Unmatched Rows",
+      "description": "Which SQL JOIN type returns all rows from the left table together with matching rows from the right table, filling in NULLs where there is no match?",
+      "difficulty": "easy",
+      "options": [
+        { "id": "a", "text": "INNER JOIN" },
+        { "id": "b", "text": "LEFT JOIN" },
+        { "id": "c", "text": "CROSS JOIN" },
+        { "id": "d", "text": "RIGHT JOIN" }
+      ],
+      "answerKey": "b",
+      "testCases": null
+    },
+    {
+      "kind": "INTEGER",
+      "title": "Complete Graph K6 Edge Count",
+      "description": "How many edges does the complete graph K6 have (6 vertices, every pair connected by exactly one edge)?",
+      "difficulty": "easy",
+      "options": null,
+      "answerKey": "15",
+      "testCases": null
+    },
+    {
+      "kind": "INTEGER",
+      "title": "Binary Search Worst-Case Comparisons",
+      "description": "Using the standard binary search worst-case comparison count of floor(log2 n) + 1, how many comparisons are needed in the worst case to search a sorted array of 100 elements?",
+      "difficulty": "medium",
+      "options": null,
+      "answerKey": "7",
+      "testCases": null
+    },
+    {
+      "kind": "INTEGER",
+      "title": "Merge Sort Comparisons Upper Bound",
+      "description": "Using the standard merge sort comparison bound of n * log2(n), how many comparisons does sorting 16 elements require?",
+      "difficulty": "medium",
+      "options": null,
+      "answerKey": "64",
+      "testCases": null
+    },
+    {
+      "kind": "INTEGER",
+      "title": "HTTP Status Code Classes Count",
+      "description": "HTTP status codes are grouped into classes by their leading digit (1xx, 2xx, 3xx, 4xx, 5xx). How many status code classes are defined in total?",
+      "difficulty": "easy",
+      "options": null,
+      "answerKey": "5",
+      "testCases": null
+    },
+    {
+      "kind": "INTEGER",
+      "title": "Tree Edges From Node Count",
+      "description": "A connected, acyclic graph (a tree) has exactly 500 nodes. How many edges does it have?",
+      "difficulty": "easy",
+      "options": null,
+      "answerKey": "499",
+      "testCases": null
+    }
+  ]
+}

@@ -218,6 +218,14 @@ All config is env-driven; see **`.env.example`** for the full list with safe loc
 **Project layout:** `apps/api` (NestJS — `sandbox/`, `submissions/`, `ai/`, `doubts/`, `review/`, `auth/`,
 `prisma/`) · `apps/web` (Next.js App Router) · `scripts/abuse-demo.sh` · `docker-compose.yml` · `Makefile`.
 
+## Sample problem data
+
+Beyond the handful of problems inlined in `prisma/seed.ts`, `apps/api/prisma/data/code-problems.json` ships 11
+additional easy stdin/stdout problems curated from [DeepMind CodeContests](https://huggingface.co/datasets/deepmind/code_contests)
+(HuggingFace, Apache-2.0). They were fetched once at authoring time via the `datasets-server` REST API, cleaned to
+plain-text statements, and retitled — the checked-in JSON is the only artifact the seed script reads, so `pnpm seed`
+stays fully offline with no network access or dataset dependency at runtime.
+
 ## What v1 intentionally does not do
 
 JS-only sandbox (Python re-enters trivially — same runner), no registration/multi-tenancy/notifications/websockets,

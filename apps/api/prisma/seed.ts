@@ -240,9 +240,11 @@ const UGLY_PAYLOAD =
   'SOH<> BEL<> ESC<[31mred[0m>' +
   '\tTAB\r\nCRLF\n';
 
+/** Plaintext password for every seeded user — printed in the summary below. */
+const DEMO_PASSWORD = 'password';
+
 async function main(): Promise<void> {
-  // Plaintext password for both seeded users is: "password"
-  const passwordHash = await bcrypt.hash('password', 10);
+  const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
 
   const student = await prisma.user.upsert({
     where: { email: 'student@verdict.dev' },
@@ -251,6 +253,22 @@ async function main(): Promise<void> {
       email: 'student@verdict.dev',
       passwordHash,
       name: 'Sample Student',
+      role: Role.STUDENT,
+    },
+  });
+
+  // A SECOND student exists so the workflow's central rule can actually be
+  // demonstrated in a browser: "only APPROVED answers are visible to OTHER
+  // students" needs another student to be the other student. Log in as this
+  // one to see a pending doubt's answer stay invisible until the teacher
+  // approves it.
+  const student2 = await prisma.user.upsert({
+    where: { email: 'student2@verdict.dev' },
+    update: { passwordHash, name: 'Second Student', role: Role.STUDENT },
+    create: {
+      email: 'student2@verdict.dev',
+      passwordHash,
+      name: 'Second Student',
       role: Role.STUDENT,
     },
   });
@@ -419,9 +437,10 @@ async function main(): Promise<void> {
   }
 
   console.log('Seed complete:');
-  console.log(
-    `  users:     ${student.email} (STUDENT), ${teacher.email} (TEACHER)`,
-  );
+  console.log(`  users (password "${DEMO_PASSWORD}"):`);
+  console.log(`    ${student.email}   (STUDENT) — submit code, ask doubts`);
+  console.log(`    ${student2.email}  (STUDENT) — the "other student" who must NOT see unapproved answers`);
+  console.log(`    ${teacher.email}   (TEACHER) — review queue: approve / edit / reject`);
   console.log(
     '  problems:  Sum of Two Numbers, Echo Line, Docker Network Isolation (MCQ), Complete Binary Tree Nodes (INTEGER)',
   );

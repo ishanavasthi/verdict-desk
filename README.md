@@ -28,8 +28,14 @@ cp .env.example .env      # defaults work out of the box — MOCK_LLM=1, no API 
 make dev                  # installs deps, starts Postgres, migrates, seeds, pre-pulls node:20-alpine, runs web + api
 ```
 
-Open **http://localhost:3000** (the API is at :4000, proxied same-origin via `/api/*`). Seeded logins (password
-`password`): **`student@verdict.dev`** (student) and **`teacher@verdict.dev`** (teacher).
+Open **http://localhost:3000** (the API is at :4000, proxied same-origin via `/api/*`). Seeded logins, all with
+password `password` — the login page has a one-click button for each:
+
+| Login | Role | Why it exists |
+|---|---|---|
+| `student@verdict.dev` | student | Submit code, ask doubts |
+| `student2@verdict.dev` | student | The *other* student — proves an unapproved answer stays invisible to everyone but the asker |
+| `teacher@verdict.dev` | teacher | The review queue: approve / edit / reject |
 
 > **Keyless by design.** `MOCK_LLM=1` (the default) makes every AI feature return canned, schema-valid JSON with no
 > network call, so the whole app is demonstrable without an NVIDIA key. To use a real model, set `MOCK_LLM=0` and

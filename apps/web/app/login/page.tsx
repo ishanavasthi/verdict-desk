@@ -6,6 +6,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+/**
+ * The seeded demo accounts (see apps/api/prisma/seed.ts), all sharing the
+ * password below. Listed here so a reviewer can switch roles without digging
+ * through the README — the second student exists specifically to show that an
+ * unapproved answer stays invisible to students other than the asker.
+ */
+const DEMO_PASSWORD = 'password';
+const DEMO_ACCOUNTS = [
+  { email: 'student@verdict.dev', label: 'Student' },
+  { email: 'student2@verdict.dev', label: 'Other student' },
+  { email: 'teacher@verdict.dev', label: 'Teacher' },
+] as const;
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('student@verdict.dev');
@@ -42,9 +55,27 @@ export default function LoginPage() {
         <p className="eyebrow mb-2">Enter the courtroom</p>
         <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          Seeded student: <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">student@verdict.dev</code>{' '}
-          / <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">password</code>
+          Seeded accounts — password{' '}
+          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{DEMO_PASSWORD}</code>. Pick one to
+          fill the form:
         </p>
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {DEMO_ACCOUNTS.map((account) => (
+            <Button
+              key={account.email}
+              type="button"
+              variant={email === account.email ? 'secondary' : 'outline'}
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => {
+                setEmail(account.email);
+                setPassword(DEMO_PASSWORD);
+              }}
+            >
+              {account.label}
+            </Button>
+          ))}
+        </div>
 
         <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">

@@ -4,9 +4,10 @@ import { SubmissionsController } from '../src/submissions/submissions.controller
 /**
  * Unit tests for POST /submissions/:id/feedback/regenerate: ownership is
  * enforced exactly like get() (non-owner -> 404, existence never leaked),
- * regeneration is only allowed from the FAILED feedback-generation state
- * (anything else -> 409), and the happy path deletes the stale row and
- * fires generation without awaiting it.
+ * regeneration is allowed from the two recoverable states (FAILED, and PENDING
+ * — which is where a submission gets STUCK if the fire-and-forget job died with
+ * the process), anything else -> 409, and the happy path clears any stale row
+ * and fires generation without awaiting it.
  */
 describe('SubmissionsController.regenerateFeedback', () => {
   const owner = { id: 'user-1', role: 'STUDENT' } as const;
@@ -17,7 +18,7 @@ describe('SubmissionsController.regenerateFeedback', () => {
         findFirst: jest.fn(),
       },
       aiFeedback: {
-        delete: jest.fn().mockResolvedValue({}),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       ...prismaOverrides,
     };
@@ -40,16 +41,15 @@ describe('SubmissionsController.regenerateFeedback', () => {
 
   it.each([
     ['READY', { status: 'PASSED', aiFeedback: { validationStatus: 'VALID' } }],
-    ['PENDING', { status: 'PASSED', aiFeedback: null }],
     ['SKIPPED', { status: 'ERROR', aiFeedback: null }],
-  ])('409s when feedback status is %s (not FAILED)', async (_label, submission) => {
+  ])('409s when feedback status is %s (nothing to recover)', async (_label, submission) => {
     const { controller, prisma, aiFeedback } = makeController();
     (prisma.submission.findFirst as jest.Mock).mockResolvedValue({ id: 'sub-1', ...submission });
 
     await expect(controller.regenerateFeedback('sub-1', owner as any)).rejects.toBeInstanceOf(
       ConflictException,
     );
-    expect(prisma.aiFeedback.delete).not.toHaveBeenCalled();
+    expect(prisma.aiFeedback.deleteMany).not.toHaveBeenCalled();
     expect(aiFeedback.generateForSubmission).not.toHaveBeenCalled();
   });
 
@@ -64,7 +64,29 @@ describe('SubmissionsController.regenerateFeedback', () => {
     const result = await controller.regenerateFeedback('sub-1', owner as any);
 
     expect(result).toEqual({ id: 'sub-1', feedbackStatus: 'PENDING' });
-    expect(prisma.aiFeedback.delete).toHaveBeenCalledWith({ where: { submissionId: 'sub-1' } });
+    expect(prisma.aiFeedback.deleteMany).toHaveBeenCalledWith({ where: { submissionId: 'sub-1' } });
+    expect(aiFeedback.generateForSubmission).toHaveBeenCalledWith('sub-1');
+  });
+
+  /**
+   * The stuck case this endpoint exists to rescue: grading finished, then the
+   * fire-and-forget feedback job died with the process, so no row was ever
+   * written. `feedbackStatus` reports PENDING forever and the UI polls a job
+   * that no longer exists — previously a 409, i.e. permanent.
+   */
+  it('re-fires generation for a submission STUCK at PENDING with no feedback row', async () => {
+    const { controller, prisma, aiFeedback } = makeController();
+    (prisma.submission.findFirst as jest.Mock).mockResolvedValue({
+      id: 'sub-1',
+      status: 'PASSED',
+      aiFeedback: null,
+    });
+
+    const result = await controller.regenerateFeedback('sub-1', owner as any);
+
+    expect(result).toEqual({ id: 'sub-1', feedbackStatus: 'PENDING' });
+    // deleteMany tolerates the row being absent — `delete` would throw P2025.
+    expect(prisma.aiFeedback.deleteMany).toHaveBeenCalledWith({ where: { submissionId: 'sub-1' } });
     expect(aiFeedback.generateForSubmission).toHaveBeenCalledWith('sub-1');
   });
 });

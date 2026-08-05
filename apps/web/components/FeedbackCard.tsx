@@ -1,6 +1,7 @@
 import type { FeedbackGenerationStatus, SubmissionFeedback } from '@/lib/api';
 import { feedbackSeverityLabel, severityOutcome } from '@/lib/status';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import StatusBadge from './StatusBadge';
 
 /**
@@ -9,7 +10,8 @@ import StatusBadge from './StatusBadge';
  *
  * State → UI:
  *  - SKIPPED → renders nothing (an ERRORed submission has no code to critique).
- *  - PENDING → "generating…" with a spinner + optional Refresh button.
+ *  - PENDING → "generating…" with a spinner, plus Refresh and (since a
+ *    fire-and-forget job can die with the process, stranding this state) Retry.
  *  - READY   → severity chip + summary + suggestions.
  *  - FAILED (or READY with no content) → graceful fallback note.
  *
@@ -50,15 +52,21 @@ export default function FeedbackCard({
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </Button>
         )}
-        {feedbackStatus === 'FAILED' && onRegenerate && (
+        {/*
+          PENDING gets Regenerate as well as Refresh. Generation is
+          fire-and-forget, so a restart can leave a submission pending with no
+          job behind it — refreshing then never resolves. Regenerating re-fires
+          it (the API accepts PENDING and FAILED for exactly this reason).
+        */}
+        {(feedbackStatus === 'FAILED' || feedbackStatus === 'PENDING') && onRegenerate && (
           <Button
             variant="ghost"
             size="sm"
-            className="ml-auto h-7 px-2 text-xs text-muted-foreground"
+            className={cn('h-7 px-2 text-xs text-muted-foreground', feedbackStatus === 'FAILED' && 'ml-auto')}
             onClick={onRegenerate}
             disabled={regenerating}
           >
-            {regenerating ? 'Regenerating…' : 'Regenerate'}
+            {regenerating ? 'Regenerating…' : feedbackStatus === 'PENDING' ? 'Retry' : 'Regenerate'}
           </Button>
         )}
       </div>

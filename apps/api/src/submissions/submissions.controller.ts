@@ -292,11 +292,22 @@ export class SubmissionsController {
     // Feedback regeneration is only ever relevant for CODE submissions (only
     // CODE gets an aiFeedback row in the first place); 'CODE' is passed
     // explicitly since this query doesn't need the problem's kind otherwise.
-    if (computeFeedbackStatus(submission.status, submission.aiFeedback, 'CODE') !== 'FAILED') {
-      throw new ConflictException('feedback can only be regenerated when generation has failed');
+    //
+    // PENDING is retryable as well as FAILED. Generation is fire-and-forget, so
+    // a process restart (or a persist that never landed) leaves a graded
+    // submission with no feedback row at all — reported as PENDING forever,
+    // with the UI polling a job that no longer exists. Refusing to regenerate
+    // the one state that can get stuck made it permanent.
+    const feedbackStatus = computeFeedbackStatus(submission.status, submission.aiFeedback, 'CODE');
+    if (feedbackStatus !== 'FAILED' && feedbackStatus !== 'PENDING') {
+      throw new ConflictException(
+        'feedback can only be regenerated while it is pending or after generation failed',
+      );
     }
 
-    await this.prisma.aiFeedback.delete({ where: { submissionId: id } });
+    // deleteMany, not delete: on the PENDING path there is usually no row yet,
+    // and `delete` would throw P2025 for a perfectly valid retry.
+    await this.prisma.aiFeedback.deleteMany({ where: { submissionId: id } });
 
     // Fire-and-forget, same pattern as grading.service.ts's triggerFeedback:
     // never let feedback generation block or fail this request.

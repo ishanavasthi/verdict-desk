@@ -117,6 +117,14 @@ jobs:
           pnpm --filter @verdict/api prisma:deploy
           pnpm seed
 
+      # This job already has a migrated + seeded Postgres, which is the only
+      # thing the e2e suite needs beyond MOCK_LLM. Running it here covers what
+      # `pnpm test` structurally cannot (it excludes *.e2e-spec.ts): the DB
+      # triggers fired against real Postgres, the 403 role boundaries over
+      # HTTP, hidden-case redaction, rate limiting, and objective grading.
+      - name: e2e (real DB, mock LLM)
+        run: MOCK_LLM=1 pnpm --filter @verdict/api test:e2e
+
       - name: Build api + web
         run: pnpm build
 

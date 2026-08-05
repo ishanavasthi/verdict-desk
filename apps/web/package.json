@@ -9,7 +9,7 @@
     "start": "next start -p ${WEB_PORT:-3000}",
     "typecheck": "tsc --noEmit",
     "lint": "next lint",
-    "test": "echo \"(web: no unit tests in M0)\" && exit 0"
+    "test": "echo \"(web: no unit tests — covered by lint, typecheck, and scripts/ci-browser-smoke.mjs)\" && exit 0"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

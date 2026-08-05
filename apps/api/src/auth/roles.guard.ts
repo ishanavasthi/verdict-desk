@@ -5,11 +5,15 @@ import { Request } from 'express';
 import { ROLES_KEY } from './roles.decorator';
 
 /**
- * NOT wired to any route yet — M2 has no teacher-only endpoints. Set up now
- * (per the M2 spec) so a LATER milestone can do
- * `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles('TEACHER')` with no further
- * plumbing. Always list AFTER JwtAuthGuard — it reads `req.user`, which only
- * JwtAuthGuard sets. Routes with no `@Roles()` metadata are allowed through.
+ * Role authorization. Always list AFTER JwtAuthGuard in `@UseGuards(...)` — it
+ * reads `req.user`, which only JwtAuthGuard sets. Routes with no `@Roles()`
+ * metadata are allowed through.
+ *
+ * Currently guards: `/review/queue` and `/answers/:id/{approve,reject,edit}`
+ * (`@Roles('TEACHER')`), and `POST /doubts` (`@Roles('STUDENT')`, so a teacher
+ * can't route their own question into their own review queue). These are the
+ * boundaries that keep the approval workflow meaningful, so they're asserted
+ * over HTTP in broad-coverage.e2e-spec.ts rather than trusted to stay wired.
  */
 @Injectable()
 export class RolesGuard implements CanActivate {

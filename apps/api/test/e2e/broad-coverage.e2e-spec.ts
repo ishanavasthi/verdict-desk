@@ -477,7 +477,7 @@ describe('M6 e2e broadened coverage (real app + real Postgres)', () => {
 
       let sawTooManyRequests = false;
       for (let i = 0; i < 15; i++) {
-        // eslint-disable-next-line no-await-in-loop
+        // Sequential on purpose: the burst has to cross the limit in order.
         const res = await request(server).post('/auth/login').send(creds);
         if (res.status === 429) {
           sawTooManyRequests = true;

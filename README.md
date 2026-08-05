@@ -48,7 +48,7 @@ password `password` — the login page has a one-click button for each:
 | **Grade a submission** | Log in as the student → open *Sum of Two Numbers* → paste a solution → **Submit**. You get per-test pass/fail + a weighted score. Hidden test cases show **pass/fail only** (no I/O). |
 | **See the sandbox contain hostile code** | `bash scripts/abuse-demo.sh` (with the stack up). Proves: correct→100%, `while(1)`→TIMEOUT, fork bomb→killed, network→blocked, fs-write→blocked, 100MB stdout→truncated with **stable API memory**, and a queue-stall attempt→contained. Exits non-zero if any check fails. |
 | **AI feedback** | After grading, an **"🤖 AI-generated · UNREVIEWED"** card appears with a severity + suggestions. |
-| **Doubts → teacher review** | As the student, post a doubt on **Doubts**. An AI drafts an answer that stays hidden. As the **teacher**, open **Review queue**, see the doubt + draft side-by-side, and Approve/Edit/Reject (optionally with a **reject reason**, persisted and shown to the doubt's author on the rejected answer). Only approved answers become visible to other students, and the doubt page **live-polls** while an answer is still DRAFT/PENDING_REVIEW so an approval/rejection shows up without a manual refresh. |
+| **Doubts → teacher review** | As the student, post a doubt on **Doubts** — you land on the doubt page and watch the AI draft arrive (**live-polled**, no refresh needed). Its text is withheld even from you: you see only that a draft is awaiting review. As the **teacher**, open **Review queue**, see the doubt + draft side-by-side, and Approve/Edit/Reject (optionally with a **reject reason**, persisted and shown to the author). The moment you approve, the student's open page updates. Log in as **`student2@verdict.dev`** at any point to confirm a non-approved answer is invisible to other students entirely. |
 | **Answer an MCQ or INTEGER question** | Open a non-CODE problem — it's graded **instantly, server-side**, no sandbox or LLM involved (see [Question kinds](#question-kinds)). |
 | **Recover a failed AI feedback generation** | If a feedback generation is flagged **FAILED**, the results card shows a **Regenerate** button — it re-fires generation without needing a new submission. |
 | **Prove the DB rejects illegal transitions** | `docker compose exec -T db psql -U verdict -d verdict -c "UPDATE answers SET state='APPROVED' WHERE state='REJECTED';"` → **the database itself errors.** |
@@ -190,14 +190,22 @@ app code. A raw-SQL migration installs two triggers on the `answers` table:
   `authorType` is immutable. Everything else raises `check_violation`.
 
 The app layer uses **guarded compare-and-set updates** (`updateMany WHERE state = <expected>`); both an affected-count
-of 0 (someone else moved it) and a trigger exception map to **HTTP 409**, never a 500. **Answer visibility is enforced
-in the query** (`WHERE state='APPROVED' OR doubt.authorId = viewer OR viewer is TEACHER`), not in the UI — a
-non-author student can never receive a non-approved answer's content, and a teacher's edit replaces the draft students
-see (the raw pre-edit text is never shipped). Every transition writes an append-only `ReviewAudit` row. Teacher-only
-routes are `RolesGuard`-protected (a student hitting the review queue gets 403).
+of 0 (someone else moved it) and a trigger exception map to **HTTP 409**, never a 500.
 
-This is verified by an independent **16-case raw-SQL attack matrix** (every illegal transition/insert rejected by the
-DB, every legal one allowed) plus state-machine unit tests — see [Testing](#testing).
+**Visibility is enforced in two places, both server-side, neither in the UI.** Which answer *rows* a viewer receives
+is a `WHERE` clause in the query (`state='APPROVED' OR doubt.authorId = viewer OR viewer is TEACHER`); whether a row
+carries its *text* is a second, deliberately stricter rule (`readableAnswerContent`): **only an `APPROVED` answer
+carries content for a non-teacher.** The two differ on purpose — the asker gets their own doubt's rows in every state
+so the UI can show that a draft exists and how review went, but that is not permission to read unreviewed AI output.
+A teacher's edit replaces the draft students see (the raw pre-edit text is never shipped). Every transition writes an
+append-only `ReviewAudit` row. Role boundaries are `RolesGuard`-protected: a student hitting the review queue or any
+answer-decision route gets 403, and a teacher can't post a doubt (which would route their own question into their own
+queue for self-approval).
+
+Verified by an independent raw-SQL attack matrix — **now automated in the e2e suite and run in CI**, so an illegal
+`INSERT`/`UPDATE` issued straight to Postgres (bypassing the app entirely) must still be rejected by the database,
+and the legal transition must still succeed — plus the 403 assertions and state-machine unit tests. See
+[Testing](#testing).
 
 ### 4. Residual risks (honest disclosure)
 
@@ -236,8 +244,13 @@ DB, every legal one allowed) plus state-machine unit tests — see [Testing](#te
 - **Static untrusted-data delimiter** in prompts (no per-request nonce) — a doubt could attempt a delimiter
   break-out, but the teacher-review gate and the strict Zod schema contain the blast radius; a nonce would be the
   next hardening step.
-- **The doubt author can see their own pending draft via the API** (permitted by the visibility rule "asker sees own
-  pending"); the UI conservatively hides it behind an "awaiting review" note.
+- ~~**The doubt author can see their own pending draft via the API.**~~ **CLOSED.** The visibility rule returns the
+  asker every answer on their own doubt in every state, so they used to receive the full text of `PENDING_REVIEW`,
+  `DRAFT`, and `REJECTED` answers — the UI's "awaiting review" note only masked the pending case, and only in the
+  browser. Now the *rows* still ship (so the asker can see a draft exists and how review went) but the **text is
+  withheld unless the answer is `APPROVED`** (`readableAnswerContent`, the pure companion to `visibleAnswerWhere`):
+  the asker being told an answer is pending is not the asker reading unreviewed AI output. Teachers still get the
+  text — they're the reviewers. Pinned by unit tests and an e2e assertion on the wire format.
 
 ---
 
@@ -261,22 +274,30 @@ JSON) · `Doubt` → `Answer` (`authorType AI|TEACHER`, `state DRAFT|PENDING_REV
 ## Testing
 
 ```bash
-pnpm test                      # 222 unit tests / 29 suites: state machine, redaction (incl. answerKey), Zod gates,
-                                # caps, objective grading, verdict/scoring — DB/Docker/network-free (what CI runs)
-bash scripts/abuse-demo.sh          # sandbox evidence artifact (needs the stack up): 7 containment assertions
+make setup                     # once per clone — @prisma/client is CODE-GENERATED, and the tests import it
+make test                      # 243 unit tests / 29 suites: state machine, redaction (incl. answerKey + unreviewed
+                                # answer text), Zod gates, caps, objective grading, verdict/scoring, error-envelope
+                                # redaction — DB/Docker/network-free (what CI runs on every push)
+make abuse                     # sandbox evidence artifact (needs the stack up): 7 containment assertions
+make verify-sandbox            # proves the /proc/1/fd/1 residual is closed (talks to Docker directly)
 bash scripts/verify-destructive.sh  # destructive-payload matrix: fs destruction, key exfil, de-root, disk/mem bombs
-bash scripts/verify-uid-separation.sh  # proves the /proc/1/fd/1 residual is closed (talks to Docker directly)
-# e2e (needs DB, MOCK mode) — 9 specs: the happy path (grade -> hidden-case redaction -> doubt -> AI draft ->
-# teacher approval -> visible) plus teacher approve/reject-with-reason visibility, rate-limit 429, input caps,
-# MCQ/INTEGER grading with answerKey-absence assertions, and feedback regenerate:
-docker compose up -d --wait db && pnpm --filter @verdict/api prisma:deploy && pnpm --filter @verdict/api seed
-MOCK_LLM=1 pnpm --filter @verdict/api test:e2e
+
+# e2e (needs DB, MOCK mode) — 17 specs across 2 suites:
+make db-up migrate seed && make test-e2e
 ```
 
-The state machine was additionally verified with a raw-SQL attack matrix (illegal `UPDATE`/`INSERT` rejected by the
-DB) and the full student + teacher flows were exercised end-to-end in a real browser. CI (GitHub Actions) runs lint,
-typecheck, and the DB-free unit suite on every push, plus a headless-browser smoke job (login → docket → MCQ submit
-→ verdict) against a fully booted stack.
+The e2e suite covers the happy path (grade → hidden-case redaction → doubt → AI draft → teacher approval →
+visible), teacher approve/reject-with-reason visibility, **the role boundaries over HTTP** (a student gets 403 on
+the review queue and on all three answer-decision routes; a teacher gets 403 posting a doubt), **the DB triggers
+fired against real Postgres via raw SQL that bypasses the app** (an AI answer inserted straight into `APPROVED`,
+`REJECTED → APPROVED`, and editing an approved answer are all rejected; the legal transition still succeeds),
+**unreviewed answer text withheld on the wire**, rate-limit 429s, input caps, MCQ/INTEGER grading with
+answerKey-absence assertions, and feedback regeneration.
+
+CI (GitHub Actions) runs lint, typecheck, and the DB-free unit suite on every push; a second job runs the
+**e2e suite against a real migrated + seeded Postgres**; a third runs the **uid-separation proof against real
+Docker**; and a fourth drives a headless browser (login → docket → MCQ submit → verdict) against a fully booted
+stack. The full student + teacher flows were also exercised by hand in a real browser.
 
 ## License
 

@@ -7,12 +7,20 @@ export const AUTH_COOKIE_NAME = 'verdict_token';
 export const AUTH_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * `secure:false` is intentional for local dev (see SHARED CONTRACT) — the web
- * slice is built against this exact cookie shape, do not change it here.
+ * `secure` defaults to FALSE so local dev over plain HTTP works (the web slice
+ * is built against this exact cookie shape). Set `COOKIE_SECURE=1` in any
+ * environment served over HTTPS — see DEPLOY.md — and the cookie is then only
+ * ever sent over TLS.
+ *
+ * Read at call time rather than at module load: `ConfigModule` populates
+ * process.env from .env during bootstrap, which happens after this module is
+ * first required.
  */
-export const AUTH_COOKIE_OPTIONS: CookieOptions = {
-  httpOnly: true,
-  sameSite: 'lax',
-  path: '/',
-  secure: false,
-};
+export function authCookieOptions(): CookieOptions {
+  return {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    secure: process.env.COOKIE_SECURE === '1',
+  };
+}

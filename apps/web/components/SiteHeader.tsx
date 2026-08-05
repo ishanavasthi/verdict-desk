@@ -11,7 +11,7 @@ import ThemeToggle from './theme-toggle';
  */
 export default function SiteHeader({ user }: { user: User | null }) {
   return (
-    <header className="sticky top-0 z-40 h-14 border-b border-border bg-background/85 backdrop-blur-md">
+    <header className="sticky top-0 z-40 min-h-14 border-b border-border bg-background/85 backdrop-blur-md">
       <div className="mx-auto flex h-full max-w-[1400px] items-center gap-4 px-4 sm:px-6">
         <Wordmark />
         {user && (

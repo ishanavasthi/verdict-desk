@@ -61,3 +61,70 @@ describe('DoubtsController.get() — reviewNote passthrough', () => {
     expect(result.answers[0].reviewNote).toBeNull();
   });
 });
+
+/**
+ * The controller-boundary half of the redaction rule (the rule itself is unit
+ * tested in doubt-answer-visibility.spec.ts). These assert on the ACTUAL
+ * serialized response, since that — not the helper — is what ships to a client:
+ * the author of a doubt is the one viewer who receives non-approved answer rows
+ * at all, so they are the one who could be leaked to.
+ */
+describe('DoubtsController.get() — non-approved content is withheld from students', () => {
+  const author = { id: 'student-1', role: 'STUDENT' } as any;
+  const teacher = { id: 'teacher-1', role: 'TEACHER' } as any;
+
+  const answerIn = (state: string) => ({
+    id: 'answer-1',
+    authorType: 'AI',
+    state,
+    content: 'UNREVIEWED AI TEXT',
+    editedContent: null,
+    reviewNote: null,
+    reviewedById: null,
+    createdAt: new Date('2024-01-01T00:00:00Z'),
+    updatedAt: new Date('2024-01-01T00:00:00Z'),
+  });
+
+  it.each(['PENDING_REVIEW', 'DRAFT', 'REJECTED'])(
+    'returns a %s answer to its own author WITHOUT the text',
+    async (state) => {
+      const controller = new DoubtsController(fakePrisma(answerIn(state)) as any, { run: jest.fn() } as any);
+
+      const result = await controller.get('doubt-1', author);
+
+      // The row still ships (the author may know a draft exists + its state)...
+      expect(result.answers).toHaveLength(1);
+      expect(result.answers[0].state).toBe(state);
+      // ...but the words never do.
+      expect(result.answers[0].content).toBeNull();
+      expect(JSON.stringify(result)).not.toContain('UNREVIEWED AI TEXT');
+    },
+  );
+
+  it('returns the text once the answer is APPROVED', async () => {
+    const controller = new DoubtsController(fakePrisma(answerIn('APPROVED')) as any, { run: jest.fn() } as any);
+
+    const result = await controller.get('doubt-1', author);
+
+    expect(result.answers[0].content).toBe('UNREVIEWED AI TEXT');
+  });
+
+  it('still gives a TEACHER the pending text (they are the reviewer)', async () => {
+    const controller = new DoubtsController(
+      fakePrisma(answerIn('PENDING_REVIEW')) as any,
+      { run: jest.fn() } as any,
+    );
+
+    const result = await controller.get('doubt-1', teacher);
+
+    expect(result.answers[0].content).toBe('UNREVIEWED AI TEXT');
+  });
+
+  it('never serializes reviewedById to a student', async () => {
+    const controller = new DoubtsController(fakePrisma(answerIn('APPROVED')) as any, { run: jest.fn() } as any);
+
+    const result = await controller.get('doubt-1', author);
+
+    expect(result.answers[0]).not.toHaveProperty('reviewedById');
+  });
+});

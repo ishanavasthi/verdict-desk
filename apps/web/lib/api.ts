@@ -168,18 +168,24 @@ export interface DoubtAuthor {
 }
 
 /**
- * A single answer to a doubt. `content` is the original (AI) draft;
- * `editedContent` is set once a teacher has edited or approved-with-edits —
- * always prefer `editedContent ?? content` when displaying an answer.
+ * A single answer to a doubt, as served to a doubt page.
  *
- * `content`/`editedContent` are untrusted (AI- or teacher-authored student
- * doubt content) — render as plain text only, never as HTML/markdown.
+ * `content` is the answer's EFFECTIVE text (the API already collapses a
+ * teacher's `editedContent` over the original AI draft), or **`null` when the
+ * viewer isn't entitled to read it** — the API withholds the text of every
+ * non-APPROVED answer from non-teachers. The doubt's own author still receives
+ * the row (so the UI can show a draft exists and how review went), just without
+ * the words. Treat `content === null` as "exists, not readable yet", not as an
+ * error, and never assume a non-null value.
+ *
+ * `content` is untrusted (AI- or teacher-authored) — render as plain text
+ * only, never as HTML/markdown.
  */
 export interface Answer {
   id: string;
   authorType: AnswerAuthorType;
   state: AnswerState;
-  content: string;
+  content: string | null;
   editedContent: string | null;
   /** Teacher's reject reason — only ever non-null on REJECTED answers, which the API only returns to the doubt author and teachers. Untrusted free text: render plain. */
   reviewNote: string | null;
@@ -190,12 +196,16 @@ export interface Answer {
  * A student-authored doubt (question). `title`/`body` are untrusted —
  * render as plain text only.
  *
- * The API filters `answers` by viewer: students see APPROVED answers plus
- * their own doubt's PENDING_REVIEW answers; teachers see everything.
+ * The API filters `answers` by viewer: a student sees APPROVED answers from
+ * anyone, plus every answer on their OWN doubt in any state — but the text of
+ * a non-APPROVED answer is withheld (`content: null`, see `Answer`). Teachers
+ * see everything, text included.
  */
 export interface Doubt {
   id: string;
   problemId: string | null;
+  /** The asker's user id — compare against `User.id` to test ownership (never the email). */
+  authorId: string;
   title: string;
   body: string;
   createdAt: string;

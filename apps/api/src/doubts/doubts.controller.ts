@@ -8,16 +8,21 @@ import { RateLimitGuard } from '../common/rate-limit.guard';
 import { DEFAULT_DOUBTS_PER_MIN, RATE_LIMIT_DOUBTS_ENV, RATE_LIMIT_WINDOW_MS, envLimit } from '../common/rate-limit.config';
 import { CreateDoubtDto } from './dto/create-doubt.dto';
 import { AiDraftPipeline } from './ai-draft.pipeline';
-import { visibleAnswerWhere } from './answer-visibility';
+import { readableAnswerContent, visibleAnswerWhere } from './answer-visibility';
 
 export interface AnswerView {
   id: string;
   authorType: string;
   state: string;
-  content: string;
+  /**
+   * The answer's effective text — or `null` when the viewer isn't entitled to
+   * read it yet (any non-APPROVED answer, for any non-TEACHER viewer). The
+   * doubt's author still receives the row so the UI can show that a draft
+   * exists and where it is in review; it just never carries the words.
+   */
+  content: string | null;
   editedContent: string | null;
   reviewNote: string | null;
-  reviewedById: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -104,7 +109,7 @@ export class DoubtsController {
         },
       },
     });
-    return doubts.map((d) => this.toDoubtView(d));
+    return doubts.map((d) => this.toDoubtView(d, user));
   }
 
   @Get(':id')
@@ -125,7 +130,7 @@ export class DoubtsController {
     if (!doubt) {
       throw new NotFoundException(`doubt ${id} not found`);
     }
-    return this.toDoubtView(doubt);
+    return this.toDoubtView(doubt, user);
   }
 
   /**
@@ -136,6 +141,20 @@ export class DoubtsController {
    * (otherwise the edit is cosmetic and redaction leaks via the JSON response).
    * So we return `content = editedContent ?? content` and drop the raw column.
    * The teacher's `/review/queue` endpoint (separate) still exposes both for editing.
+   *
+   * AND, for any viewer who is not a TEACHER, the text of a non-APPROVED answer
+   * is withheld entirely (`content: null`). `visibleAnswerWhere` deliberately
+   * returns the author their own doubt's answers in EVERY state so they can see
+   * that a draft exists and how review went — but "the asker may know an answer
+   * is pending" is not "the asker may read unreviewed AI output". Three states
+   * are covered by this, all of which used to ship their full text to the asker:
+   *   - PENDING_REVIEW — the draft a teacher hasn't ruled on yet.
+   *   - REJECTED       — text a teacher explicitly refused to publish.
+   *   - DRAFT          — never queued for review at all; for a validation
+   *                      failure its `content` is an internal diagnostic string
+   *                      (see AiDraftPipeline.persistFailure), not an answer.
+   * The UI masks these too, but that mask is cosmetic: it can't stop anyone
+   * reading the JSON. This is where the guarantee actually lives.
    */
   private toDoubtView(doubt: {
     id: string;
@@ -156,7 +175,7 @@ export class DoubtsController {
       createdAt: Date;
       updatedAt: Date;
     }[];
-  }): DoubtView {
+  }, viewer: RequestUser): DoubtView {
     return {
       id: doubt.id,
       problemId: doubt.problemId,
@@ -169,10 +188,9 @@ export class DoubtsController {
         id: a.id,
         authorType: a.authorType,
         state: a.state,
-        content: a.editedContent ?? a.content,
+        content: readableAnswerContent(viewer, a),
         editedContent: null,
         reviewNote: a.reviewNote,
-        reviewedById: a.reviewedById,
         createdAt: a.createdAt,
         updatedAt: a.updatedAt,
       })),

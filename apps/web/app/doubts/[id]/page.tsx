@@ -34,10 +34,10 @@ export default async function DoubtDetailPage({ params }: { params: Promise<{ id
       redirect('/login');
     }
     unreachable = true;
-    doubt = { id, problemId: null, title: '', body: '', createdAt: '', author: null, answers: [] };
+    doubt = { id, problemId: null, authorId: '', title: '', body: '', createdAt: '', author: null, answers: [] };
   }
 
-  const isOwn = doubt.author?.email === user.email;
+  const isOwn = doubt.authorId === user.id;
 
   return (
     <PageShell

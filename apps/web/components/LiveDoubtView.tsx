@@ -7,12 +7,19 @@ import { usePolling } from '@/lib/use-polling';
 import AnswerCard from '@/components/AnswerCard';
 import { Button } from '@/components/ui/button';
 
-// An AI draft may still be generating (no answers yet, but the doubt is the
-// viewer's own) or awaiting teacher review (DRAFT/PENDING_REVIEW) — either
-// case means the answers list can still change without a manual reload.
+// Poll only while something can still CHANGE: an AI draft may still be
+// generating (no answers yet, on the viewer's own doubt), or a teacher has yet
+// to rule on a PENDING_REVIEW answer.
+//
+// DRAFT is deliberately NOT a polling trigger. It looks in-flight but is
+// terminal in practice: the pipeline inserts DRAFT and immediately transitions
+// it to PENDING_REVIEW, so an answer still sitting at DRAFT is one whose
+// validation failed and which will never be queued (AiDraftPipeline
+// .persistFailure). Polling it burned the whole 60-tick budget against a state
+// that cannot move.
 function needsPolling(doubt: Doubt, isOwn: boolean): boolean {
   if (doubt.answers.length === 0 && isOwn) return true;
-  return doubt.answers.some((answer) => answer.state === 'DRAFT' || answer.state === 'PENDING_REVIEW');
+  return doubt.answers.some((answer) => answer.state === 'PENDING_REVIEW');
 }
 
 /**
@@ -92,11 +99,7 @@ export default function LiveDoubtView({ doubt: initial, isOwn }: { doubt: Doubt;
       ) : (
         <ul className="flex flex-col gap-2">
           {doubt.answers.map((answer) => (
-            <AnswerCard
-              key={answer.id}
-              answer={answer}
-              hidePendingContent={isOwn && answer.authorType === 'AI' && answer.state === 'PENDING_REVIEW'}
-            />
+            <AnswerCard key={answer.id} answer={answer} />
           ))}
         </ul>
       )}

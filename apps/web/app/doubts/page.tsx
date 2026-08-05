@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getAuthToken, getMe } from '@/lib/auth';
-import { ApiError, getDoubts, getProblems, type Doubt, type Problem, type User } from '@/lib/api';
+import { ApiError, getDoubts, getProblems, type Doubt, type Problem } from '@/lib/api';
 import AnswerCard from '@/components/AnswerCard';
 import DoubtForm from '@/components/DoubtForm';
 import PageShell from '@/components/PageShell';
@@ -15,10 +15,6 @@ async function loadProblemOptions(): Promise<Problem[]> {
   } catch {
     return [];
   }
-}
-
-function isOwnDoubt(user: User, doubt: Doubt): boolean {
-  return doubt.author?.email === user.email;
 }
 
 export default async function DoubtsPage() {
@@ -87,13 +83,7 @@ export default async function DoubtsPage() {
                   {doubt.answers.length > 0 && (
                     <ul className="mt-3 flex flex-col gap-2 border-t border-dashed border-border pt-3">
                       {doubt.answers.map((answer) => (
-                        <AnswerCard
-                          key={answer.id}
-                          answer={answer}
-                          hidePendingContent={
-                            isOwnDoubt(user, doubt) && answer.authorType === 'AI' && answer.state === 'PENDING_REVIEW'
-                          }
-                        />
+                        <AnswerCard key={answer.id} answer={answer} />
                       ))}
                     </ul>
                   )}

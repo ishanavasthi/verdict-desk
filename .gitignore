@@ -40,10 +40,12 @@ coverage/
 .sandbox-tmp/
 
 # Local planning & agent instructions (kept local, not pushed — per project decision)
+# NOTE: DECISIONS.md is deliberately NOT here — it is tracked. README and
+# DEPLOY.md cite its ADRs by number, so ignoring it left the shipped docs
+# pointing at a file a cloner never receives.
 .plans/
 PLAN.md
 PLANS.md
 CLAUDE.md
-DECISIONS.md
 TESTING.md
 HANDOFF.md

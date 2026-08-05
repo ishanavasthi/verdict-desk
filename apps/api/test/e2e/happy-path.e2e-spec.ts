@@ -155,15 +155,21 @@ describe('M5 e2e happy path (real app + real Postgres + real Docker sandbox)', (
     );
     const draftAnswer = withDraft.answers.find((a: any) => a.authorType === 'AI' && a.state === 'PENDING_REVIEW');
     expect(draftAnswer).toBeDefined();
-    expect(typeof draftAnswer.content).toBe('string');
-    expect(draftAnswer.content.length).toBeGreaterThan(0);
+    // The asker learns a draft EXISTS and that it's awaiting review — but not
+    // what it says. Unreviewed AI text reaches nobody, the author included
+    // (see readableAnswerContent).
+    expect(draftAnswer.content).toBeNull();
 
     // ---- 7. Log in as the seeded teacher; the draft shows up in their review queue ----
     const teacherLogin = await teacher.post('/auth/login').send(TEACHER_CREDENTIALS).expect(200);
     expect(teacherLogin.body.role).toBe('TEACHER');
 
     const queueRes = await teacher.get('/review/queue').expect(200);
-    expect(queueRes.body.some((item: any) => item.id === draftAnswer.id)).toBe(true);
+    const queued = queueRes.body.find((item: any) => item.id === draftAnswer.id);
+    expect(queued).toBeDefined();
+    // The reviewer — and only the reviewer — gets the actual draft text to rule on.
+    expect(typeof queued.content).toBe('string');
+    expect(queued.content.length).toBeGreaterThan(0);
 
     // ---- 8. Approve it, WITH an edit (also exercises pre-edit-content redaction) ----
     const APPROVED_TEXT =
@@ -181,8 +187,12 @@ describe('M5 e2e happy path (real app + real Postgres + real Docker sandbox)', (
     expect(approvedAnswer).toBeDefined();
     expect(approvedAnswer.state).toBe('APPROVED');
     expect(approvedAnswer.content).toBe(APPROVED_TEXT);
-    expect(approvedAnswer.content).not.toBe(draftAnswer.content);
+    // The raw pre-edit AI draft (which the teacher deliberately replaced) is
+    // nowhere in the response — otherwise the edit would be cosmetic.
+    expect(approvedAnswer.content).not.toBe(queued.content);
+    expect(JSON.stringify(afterApproval.body)).not.toContain(queued.content);
     expect(approvedAnswer.editedContent).toBeNull();
-    expect(approvedAnswer.reviewedById).toBeDefined();
+    // Internal reviewer identity is not part of a student-facing payload.
+    expect(approvedAnswer).not.toHaveProperty('reviewedById');
   });
 });

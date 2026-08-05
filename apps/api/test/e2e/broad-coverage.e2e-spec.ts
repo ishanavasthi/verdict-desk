@@ -169,7 +169,10 @@ describe('M6 e2e broadened coverage (real app + real Postgres)', () => {
       const rejected = authorView.body.answers.find((a: any) => a.id === draftAnswer.id);
       expect(rejected).toBeDefined();
       expect(rejected.state).toBe('REJECTED');
+      // The author gets the teacher's REASON — but never the rejected draft
+      // itself: a teacher refusing to publish text is not permission to read it.
       expect(rejected.reviewNote).toBe(REASON);
+      expect(rejected.content).toBeNull();
 
       const otherView = await other.get(`/doubts/${doubtId}`).expect(200);
       expect(otherView.body.answers.some((a: any) => a.id === draftAnswer.id)).toBe(false);
@@ -302,6 +305,163 @@ describe('M6 e2e broadened coverage (real app + real Postgres)', () => {
 
       // Already READY -> 409.
       await student.post(`/submissions/${submissionId}/feedback/regenerate`).expect(409);
+    });
+  });
+
+  /**
+   * The authorization boundary itself, over HTTP. Every other test in this file
+   * drives the review routes as a teacher, so a regression that turned
+   * RolesGuard into a no-op would leave the whole suite green while letting a
+   * student approve the AI's answer to their own doubt — the exact bypass the
+   * review workflow exists to prevent.
+   */
+  describe('role boundaries (RolesGuard over HTTP)', () => {
+    it('refuses a student the teacher review queue', async () => {
+      await student.get('/review/queue').expect(403);
+    });
+
+    it('refuses a student every answer-decision route on a REAL pending answer', async () => {
+      const doubtRes = await student
+        .post('/doubts')
+        .send({ title: `Role-boundary doubt ${runId}`, body: 'Can I approve this myself?' })
+        .expect(201);
+      const doubtId = doubtRes.body.id;
+
+      // Read the answer id as the TEACHER: a student is (correctly) no longer
+      // served the text or any handle they could act on beyond the id itself.
+      const withDraft = await pollUntil(
+        async () => (await teacher.get(`/doubts/${doubtId}`).expect(200)).body,
+        (d) => d.answers.some((a: any) => a.authorType === 'AI' && a.state === 'PENDING_REVIEW'),
+      );
+      const draftAnswer = withDraft.answers.find(
+        (a: any) => a.authorType === 'AI' && a.state === 'PENDING_REVIEW',
+      );
+      expect(draftAnswer).toBeDefined();
+
+      // The doubt's own author cannot rule on it.
+      await student.post(`/answers/${draftAnswer.id}/approve`).send({}).expect(403);
+      await student.post(`/answers/${draftAnswer.id}/reject`).send({ reason: 'no' }).expect(403);
+      await student.post(`/answers/${draftAnswer.id}/edit`).send({ editedContent: 'mine now' }).expect(403);
+
+      // ...and it is still pending afterwards, i.e. nothing partially applied.
+      const after = await teacher.get(`/doubts/${doubtId}`).expect(200);
+      expect(after.body.answers.find((a: any) => a.id === draftAnswer.id).state).toBe('PENDING_REVIEW');
+    });
+
+    it('refuses a teacher posting a doubt (no self-approval loop)', async () => {
+      await teacher
+        .post('/doubts')
+        .send({ title: `Teacher doubt ${runId}`, body: 'Should not be allowed.' })
+        .expect(403);
+    });
+  });
+
+  /**
+   * The DB-level state machine, exercised against the REAL triggers rather than
+   * their TypeScript mirror. These bypass the app entirely — raw SQL, as an
+   * evaluator would — so they fail if the trigger migration is ever dropped,
+   * or if someone runs `prisma db push` (which silently skips raw-SQL
+   * migrations) and the guarantee quietly disappears.
+   */
+  describe('answer state machine enforced by Postgres itself', () => {
+    /** An answer parked in PENDING_REVIEW, created through the normal AI path. */
+    async function pendingAnswerId(tag: string): Promise<string> {
+      const doubtRes = await student
+        .post('/doubts')
+        .send({ title: `Trigger ${tag} ${runId}`, body: 'Raw-SQL attack matrix fixture.' })
+        .expect(201);
+      const withDraft = await pollUntil(
+        async () => (await teacher.get(`/doubts/${doubtRes.body.id}`).expect(200)).body,
+        (d) => d.answers.some((a: any) => a.state === 'PENDING_REVIEW'),
+      );
+      return withDraft.answers.find((a: any) => a.state === 'PENDING_REVIEW').id;
+    }
+
+    it('rejects an AI answer INSERTed straight into APPROVED (the obvious bypass)', async () => {
+      const doubtRes = await student
+        .post('/doubts')
+        .send({ title: `Trigger insert ${runId}`, body: 'Insert-guard fixture.' })
+        .expect(201);
+
+      await expect(
+        prisma.$executeRawUnsafe(
+          `INSERT INTO answers (id, "doubtId", "authorType", state, content, "createdAt", "updatedAt")
+           VALUES (gen_random_uuid(), $1::uuid, 'AI', 'APPROVED', 'smuggled past review', now(), now())`,
+          doubtRes.body.id,
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('rejects an illegal UPDATE (REJECTED -> APPROVED) against raw SQL', async () => {
+      const answerId = await pendingAnswerId('reject-then-approve');
+      await teacher.post(`/answers/${answerId}/reject`).send({ reason: 'not good enough' }).expect(200);
+
+      await expect(
+        prisma.$executeRawUnsafe(`UPDATE answers SET state = 'APPROVED' WHERE id = $1::uuid`, answerId),
+      ).rejects.toThrow();
+
+      const row = await prisma.answer.findUniqueOrThrow({ where: { id: answerId } });
+      expect(row.state).toBe('REJECTED');
+    });
+
+    it('rejects editing the text of an already-APPROVED answer (terminal = immutable)', async () => {
+      const answerId = await pendingAnswerId('approve-then-edit');
+      await teacher.post(`/answers/${answerId}/approve`).send({}).expect(200);
+
+      await expect(
+        prisma.$executeRawUnsafe(
+          `UPDATE answers SET content = 'rewritten after approval' WHERE id = $1::uuid`,
+          answerId,
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('allows the legal PENDING_REVIEW -> APPROVED transition (the guard is not a blanket deny)', async () => {
+      const answerId = await pendingAnswerId('legal-transition');
+
+      await expect(
+        prisma.$executeRawUnsafe(`UPDATE answers SET state = 'APPROVED' WHERE id = $1::uuid`, answerId),
+      ).resolves.toBe(1);
+    });
+  });
+
+  /**
+   * The asker is the ONLY student served non-approved answer rows, so they are
+   * the only one who could be leaked to. The UI masks these too, but that mask
+   * is cosmetic — this asserts on the wire format.
+   */
+  describe('unreviewed answer text is withheld from the asker', () => {
+    it('gives the author state but no content while pending, and the text only after approval', async () => {
+      const doubtRes = await student
+        .post('/doubts')
+        .send({ title: `Redaction doubt ${runId}`, body: 'Is my draft readable before approval?' })
+        .expect(201);
+      const doubtId = doubtRes.body.id;
+
+      const pendingView = await pollUntil(
+        async () => (await student.get(`/doubts/${doubtId}`).expect(200)).body,
+        (d) => d.answers.some((a: any) => a.state === 'PENDING_REVIEW'),
+      );
+      const pending = pendingView.answers.find((a: any) => a.state === 'PENDING_REVIEW');
+
+      // The row ships (so the UI can say "a draft exists")...
+      expect(pending).toBeDefined();
+      // ...without the words, and without leaking the reviewer's id.
+      expect(pending.content).toBeNull();
+      expect(pending).not.toHaveProperty('reviewedById');
+
+      // The teacher, meanwhile, can read exactly the same answer.
+      const teacherView = await teacher.get(`/doubts/${doubtId}`).expect(200);
+      const teacherSees = teacherView.body.answers.find((a: any) => a.id === pending.id);
+      expect(typeof teacherSees.content).toBe('string');
+      expect(teacherSees.content.length).toBeGreaterThan(0);
+
+      await teacher.post(`/answers/${pending.id}/approve`).send({}).expect(200);
+
+      const approvedView = await student.get(`/doubts/${doubtId}`).expect(200);
+      const approved = approvedView.body.answers.find((a: any) => a.id === pending.id);
+      expect(approved.state).toBe('APPROVED');
+      expect(approved.content).toBe(teacherSees.content);
     });
   });
 

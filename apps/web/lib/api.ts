@@ -235,6 +235,16 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * True when the API said "there is nothing here for you" — which covers BOTH
+ * a 404 and a 400. The API validates `:id` params as UUIDs, so a mistyped or
+ * truncated id in the address bar comes back 400 rather than 404; from a
+ * page's point of view both mean "render not-found", never "the API is down".
+ */
+export function isNotFoundish(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 404 || err.status === 400);
+}
+
 interface ApiFetchOptions extends RequestInit {
   /** Raw `verdict_token` cookie value to forward — only needed for server-side calls to protected endpoints. */
   cookie?: string;

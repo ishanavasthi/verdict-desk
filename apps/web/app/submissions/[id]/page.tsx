@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getAuthToken } from '@/lib/auth';
-import { ApiError, getSubmission, type SubmissionDetail } from '@/lib/api';
+import { ApiError, getSubmission, isNotFoundish, type SubmissionDetail } from '@/lib/api';
 import LiveSubmissionView from '@/components/LiveSubmissionView';
 import { Button } from '@/components/ui/button';
 import PageShell from '@/components/PageShell';
@@ -22,8 +22,8 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
     submission = await getSubmission(id, token);
   } catch (err) {
     // The API returns 404 for both "no such submission" and "not owned by
-    // you" — either way there's nothing to render.
-    if (err instanceof ApiError && err.status === 404) {
+    // you", and 400 for a malformed id — either way there's nothing to render.
+    if (isNotFoundish(err)) {
       notFound();
     }
     if (err instanceof ApiError && err.status === 401) {

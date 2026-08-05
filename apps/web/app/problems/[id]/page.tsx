@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import { getAuthToken } from '@/lib/auth';
-import { ApiError, getProblemDetail, type ProblemDetail } from '@/lib/api';
+import { getProblemDetail, isNotFoundish, type ProblemDetail } from '@/lib/api';
 import ProblemWorkspace from '@/components/ProblemWorkspace';
 
 export const dynamic = 'force-dynamic';
@@ -17,7 +17,7 @@ export default async function ProblemPage({ params }: { params: Promise<{ id: st
   try {
     problem = await getProblemDetail(id);
   } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
+    if (isNotFoundish(err)) {
       notFound();
     }
     return (

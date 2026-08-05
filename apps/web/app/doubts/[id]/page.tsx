@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getAuthToken, getMe } from '@/lib/auth';
-import { ApiError, getDoubt, type Doubt } from '@/lib/api';
+import { ApiError, getDoubt, isNotFoundish, type Doubt } from '@/lib/api';
 import LiveDoubtView from '@/components/LiveDoubtView';
 import PageShell from '@/components/PageShell';
 import { Button } from '@/components/ui/button';
@@ -25,8 +25,9 @@ export default async function DoubtDetailPage({ params }: { params: Promise<{ id
   try {
     doubt = await getDoubt(id, token);
   } catch (err) {
-    // The API returns 404 for both "no such doubt" and "not visible to you".
-    if (err instanceof ApiError && err.status === 404) {
+    // The API returns 404 for both "no such doubt" and "not visible to you",
+    // and 400 for a malformed id.
+    if (isNotFoundish(err)) {
       notFound();
     }
     if (err instanceof ApiError && err.status === 401) {

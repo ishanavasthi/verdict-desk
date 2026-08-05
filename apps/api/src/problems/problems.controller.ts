@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, ParseUUIDPipe } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface ProblemSummary {
@@ -46,9 +46,14 @@ export class ProblemsController {
    * cases' input/expectedOutput must never be exposed here. `answerKey` is a
    * server-side secret (same status as hidden expected outputs) and is NEVER
    * selected. `options` is returned as-is for MCQ, null otherwise.
+   *
+   * `ParseUUIDPipe` rejects a malformed id with a 400 BEFORE it reaches
+   * Postgres — otherwise the driver raises a P2023 whose message carries
+   * internal detail. This route is UNAUTHENTICATED, so it is the most exposed
+   * place that could happen.
    */
   @Get(':id')
-  async detail(@Param('id') id: string): Promise<ProblemDetail> {
+  async detail(@Param('id', new ParseUUIDPipe()) id: string): Promise<ProblemDetail> {
     const problem = await this.prisma.problem.findUnique({
       where: { id },
       select: {

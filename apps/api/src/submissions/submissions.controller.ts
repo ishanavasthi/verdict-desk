@@ -9,6 +9,7 @@ import {
   Logger,
   NotFoundException,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   ServiceUnavailableException,
@@ -129,15 +130,20 @@ export class SubmissionsController {
   ): Promise<CreateSubmissionResponse> {
     // Load the problem's kind first: CODE keeps today's sandbox/queue path
     // exactly as-is; MCQ/INTEGER are graded instantly, in-process, with no
-    // queue, no sandbox, no LLM. A nonexistent problemId falls through to
-    // the CODE path below and fails at submission.create() (FK violation),
-    // same as before this change.
+    // queue, no sandbox, no LLM.
     const problem = await this.prisma.problem.findUnique({
       where: { id: dto.problemId },
       select: { kind: true, options: true, answerKey: true },
     });
 
-    if (problem && problem.kind !== 'CODE') {
+    // A well-formed but nonexistent problemId used to fall through to the CODE
+    // path and die at submission.create() with a raw FK violation (a 500). It
+    // is a client mistake, not a server fault — answer it as one.
+    if (!problem) {
+      throw new NotFoundException(`problem ${dto.problemId} not found`);
+    }
+
+    if (problem.kind !== 'CODE') {
       const kind = problem.kind as 'MCQ' | 'INTEGER';
       const options = kind === 'MCQ' ? ((problem.options as unknown as McqOption[]) ?? []) : null;
       const validation = validateObjectiveAnswer(kind, dto.code, options);
@@ -209,7 +215,10 @@ export class SubmissionsController {
   }
 
   @Get(':id')
-  async get(@Param('id') id: string, @CurrentUser() user: RequestUser): Promise<SubmissionView> {
+  async get(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() user: RequestUser,
+  ): Promise<SubmissionView> {
     // Authorization enforced IN the query: a STUDENT can only ever match their
     // own rows; a TEACHER can match any. A submission that exists but belongs
     // to someone else therefore comes back `null` here — same as truly not
@@ -265,7 +274,7 @@ export class SubmissionsController {
     default: { limit: envLimit(RATE_LIMIT_SUBMISSIONS_ENV, DEFAULT_SUBMISSIONS_PER_MIN), ttl: RATE_LIMIT_WINDOW_MS },
   })
   async regenerateFeedback(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
     @CurrentUser() user: RequestUser,
   ): Promise<{ id: string; feedbackStatus: 'PENDING' }> {
     // Same ownership rule as get(): existence is never leaked to a non-owner.

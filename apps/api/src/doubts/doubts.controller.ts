@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Logger, NotFoundException, Param, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Logger, NotFoundException, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -59,6 +59,19 @@ export class DoubtsController {
     default: { limit: envLimit(RATE_LIMIT_DOUBTS_ENV, DEFAULT_DOUBTS_PER_MIN), ttl: RATE_LIMIT_WINDOW_MS },
   })
   async create(@Body() dto: CreateDoubtDto, @CurrentUser() user: RequestUser): Promise<CreateDoubtResponse> {
+    // A doubt may be unattached (problemId omitted), but if one IS given it
+    // must exist — otherwise doubt.create() dies on the FK constraint and the
+    // client sees a 500 for what is plainly a bad request.
+    if (dto.problemId) {
+      const problem = await this.prisma.problem.findUnique({
+        where: { id: dto.problemId },
+        select: { id: true },
+      });
+      if (!problem) {
+        throw new BadRequestException(`problem ${dto.problemId} not found`);
+      }
+    }
+
     const doubt = await this.prisma.doubt.create({
       data: {
         problemId: dto.problemId ?? null,
@@ -95,7 +108,10 @@ export class DoubtsController {
   }
 
   @Get(':id')
-  async get(@Param('id') id: string, @CurrentUser() user: RequestUser): Promise<DoubtView> {
+  async get(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() user: RequestUser,
+  ): Promise<DoubtView> {
     const doubt = await this.prisma.doubt.findUnique({
       where: { id },
       include: {

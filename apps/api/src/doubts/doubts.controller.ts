@@ -2,6 +2,8 @@ import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Logge
 import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequestUser } from '../auth/types';
 import { RateLimitGuard } from '../common/rate-limit.guard';
@@ -43,9 +45,15 @@ export interface CreateDoubtResponse {
 }
 
 /**
- * Doubt board: any authed user (student or teacher) may post a doubt and see
- * the board. Per-answer visibility (which answers show up under each doubt)
- * is enforced IN the query via `visibleAnswerWhere` — see answer-visibility.ts.
+ * Doubt board: any authed user may READ the board (a teacher needs to, to
+ * answer questions); only a STUDENT may POST a doubt. A teacher posting one
+ * would route their own question into their own review queue and let them
+ * approve the AI's answer to it — a self-approval loop that makes the review
+ * gate meaningless. Asking is the student role here.
+ *
+ * Per-answer visibility (which answers show up under each doubt) is enforced IN
+ * the query via `visibleAnswerWhere`, and whether each row carries its TEXT by
+ * `readableAnswerContent` — see answer-visibility.ts.
  */
 @Controller('doubts')
 @UseGuards(JwtAuthGuard)
@@ -59,7 +67,8 @@ export class DoubtsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @UseGuards(RateLimitGuard)
+  @Roles('STUDENT')
+  @UseGuards(RolesGuard, RateLimitGuard)
   @Throttle({
     default: { limit: envLimit(RATE_LIMIT_DOUBTS_ENV, DEFAULT_DOUBTS_PER_MIN), ttl: RATE_LIMIT_WINDOW_MS },
   })

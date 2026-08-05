@@ -17,7 +17,15 @@ import {
 
 const NONE = '__none__';
 
-/** Posts a new doubt via `POST /api/doubts` (browser rewrite → API), then refreshes the board. */
+/** Mirrors MAX_DOUBT_BODY_LENGTH on the API's CreateDoubtDto — cap here too so an over-long body is caught before the round trip. */
+const MAX_BODY_LENGTH = 8 * 1024;
+
+/**
+ * Posts a new doubt via `POST /api/doubts` (browser rewrite → API), then sends
+ * the author to that doubt's page — where the AI draft's arrival and its review
+ * state are polled live. Staying on the board would show them a new doubt with
+ * no answers, no indication an AI is drafting one, and nothing that updates.
+ */
 export default function DoubtForm({ problems }: { problems: Problem[] }) {
   const router = useRouter();
   const [title, setTitle] = useState('');
@@ -44,9 +52,14 @@ export default function DoubtForm({ problems }: { problems: Problem[] }) {
         setError(`Could not post your doubt (status ${res.status}).`);
         return;
       }
+      const created: { id?: string } = await res.json().catch(() => ({}));
       setTitle('');
       setBody('');
       setProblemId(NONE);
+      if (created.id) {
+        router.push(`/doubts/${created.id}`);
+        return;
+      }
       router.refresh();
     } catch {
       setError('Could not reach the server. Is the API running?');
@@ -75,6 +88,7 @@ export default function DoubtForm({ problems }: { problems: Problem[] }) {
           value={body}
           onChange={(e) => setBody(e.target.value)}
           required
+          maxLength={MAX_BODY_LENGTH}
           rows={4}
           placeholder="Describe your doubt in detail…"
         />

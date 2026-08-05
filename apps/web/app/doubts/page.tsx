@@ -5,6 +5,7 @@ import { ApiError, getDoubts, getProblems, type Doubt, type Problem } from '@/li
 import AnswerCard from '@/components/AnswerCard';
 import DoubtForm from '@/components/DoubtForm';
 import PageShell from '@/components/PageShell';
+import { Button } from '@/components/ui/button';
 
 // Auth-gated + live data: can never be statically rendered.
 export const dynamic = 'force-dynamic';
@@ -48,9 +49,30 @@ export default async function DoubtsPage() {
       description="Ask a question — an AI drafts an answer that a teacher must approve before anyone else sees it."
     >
       <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        {/*
+          Asking is the student's role: a teacher posting a doubt would route
+          their own question into their own review queue (the API returns 403
+          for a teacher POST — see DoubtsController). Point them at the bench
+          instead of showing a form that can only fail.
+        */}
         <section className="h-fit rounded-xl border border-border bg-card p-5 lg:sticky lg:top-20">
-          <h2 className="mb-4 text-sm font-semibold">Ask a question</h2>
-          <DoubtForm problems={problems} />
+          {user.role === 'TEACHER' ? (
+            <>
+              <h2 className="mb-2 text-sm font-semibold">You&rsquo;re on the bench</h2>
+              <p className="text-sm text-muted-foreground">
+                Students ask the questions here. AI-drafted answers wait for your ruling in the review queue —
+                nothing reaches a student until you approve it.
+              </p>
+              <Button size="sm" className="mt-4" nativeButton={false} render={<Link href="/review" />}>
+                Open review queue
+              </Button>
+            </>
+          ) : (
+            <>
+              <h2 className="mb-4 text-sm font-semibold">Ask a question</h2>
+              <DoubtForm problems={problems} />
+            </>
+          )}
         </section>
 
         <section>

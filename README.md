@@ -11,8 +11,8 @@ integration**. The [Security & threat model](#security--threat-model) section is
 ---
 
 ## Contents
-- [Quick start](#quick-start) · [What you can try](#what-you-can-try) · [Question kinds](#question-kinds) ·
-  [Architecture](#architecture)
+- [Quick start](#quick-start) · [Deployment status](#deployment-status--why-not-vercelrenderrailway) ·
+  [What you can try](#what-you-can-try) · [Question kinds](#question-kinds) · [Architecture](#architecture)
 - [Security & threat model](#security--threat-model): [sandbox](#1-the-grading-sandbox) · [injection](#2-prompt-injection--llm-safety) · [state machine](#3-the-answer-state-machine-enforced-in-the-database) · [residual risks](#4-residual-risks-honest-disclosure)
 - [Why PostgreSQL, not MongoDB](#why-postgresql-not-mongodb-the-mern-question) · [Data model](#data-model) · [Testing](#testing) · [Env & structure](#configuration)
 
@@ -40,6 +40,30 @@ password `password` — the login page has a one-click button for each:
 > **Keyless by design.** `MOCK_LLM=1` (the default) makes every AI feature return canned, schema-valid JSON with no
 > network call, so the whole app is demonstrable without an NVIDIA key. To use a real model, set `MOCK_LLM=0` and
 > provide an OpenAI-compatible triple (`LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`); NIM is the default base URL.
+
+## Deployment status & why not Vercel/Render/Railway
+
+**No live link yet.** I'm in the process of procuring a cloud account (Google Cloud's $300 trial — see
+[DEPLOY.md](DEPLOY.md)); a demo URL will be added here as soon as it's provisioned. Until then, `make dev` (above)
+is the fastest way to see it running.
+
+**Why the usual free PaaS tiers (Vercel, Render, Railway, Fly.io's standard runtime, Heroku, …) don't work here:**
+grading doesn't run in-process — the API shells out to the **host's `docker` binary**
+(`spawn('docker', args)` in `apps/api/src/sandbox/runner.service.ts`) to launch one locked-down, network-isolated
+container per submission (see [the sandbox section](#1-the-grading-sandbox) and `DECISIONS.md` ADR-003). That
+requires a real Docker Engine daemon on the *same machine* as the API process, with the API's OS user in the
+`docker` group. Serverless/PaaS "web service" tiers don't expose a Docker socket and don't let you run a nested
+Docker daemon — deploying the API to one of them doesn't fail at build time, it fails on the **first submission**
+(`docker spawn error: ENOENT` or equivalent). Mounting `/var/run/docker.sock` into a container to work around
+this is the usual workaround, and it's deliberately not used here either — it would hand a compromised sandbox
+payload (or any RCE in the API) a direct path to the host's Docker socket, exactly what ADR-003's isolation model
+exists to prevent.
+
+**So it needs a real VM** — a box with Docker Engine actually installed, not a container platform — running the
+API, Postgres, and the sandbox's Docker daemon together. [DEPLOY.md](DEPLOY.md) is a full, scriptable runbook for
+that (Google Cloud as the primary path, Oracle Cloud Always Free as a zero-expiry alternative), including the
+one env var (`COOKIE_SECURE=1`) that changes for a public HTTPS deployment — everything else about the
+same-origin architecture stays as-is.
 
 ## What you can try
 

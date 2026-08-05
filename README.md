@@ -313,6 +313,11 @@ All config is env-driven; see **`.env.example`** for the full list with safe loc
 **Project layout:** `apps/api` (NestJS — `sandbox/`, `submissions/`, `ai/`, `doubts/`, `review/`, `auth/`,
 `prisma/`) · `apps/web` (Next.js App Router) · `scripts/abuse-demo.sh` · `docker-compose.yml` · `Makefile`.
 
+**Deploying.** See [DEPLOY.md](DEPLOY.md) — a step-by-step Google Cloud runbook (scriptable end to end) plus an
+Oracle Always-Free alternative. Because the browser only ever talks to one origin (Caddy → Next.js → an
+internal `/api/*` rewrite), moving to a public URL needs **no code change**: set `COOKIE_SECURE=1`, a real
+`JWT_SECRET`, and a real DB password. Architecture decisions are recorded in [DECISIONS.md](DECISIONS.md).
+
 ## Sample problem data
 
 The seed is a **28-problem docket**: 4 CODE problems inlined in `prisma/seed.ts` plus 24 from JSON-driven,
